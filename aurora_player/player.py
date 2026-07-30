@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import queue
 import sys
 import threading
 import ctypes
@@ -306,8 +307,61 @@ class MediaPane:
     last_resume_write: float = 0.0
 
 
+class SerialVlcCleanup:
+    """Release native VLC objects in order, away from the Qt interface thread."""
+
+    def __init__(self) -> None:
+        self._jobs: queue.Queue[
+            tuple[str, object, Callable[[], None] | None]
+        ] = queue.Queue()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="aurora-vlc-cleanup",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def release_player(
+        self,
+        player: vlc.MediaPlayer,
+        finished: Callable[[], None] | None = None,
+    ) -> None:
+        self._jobs.put(("player", player, finished))
+
+    def finish(
+        self,
+        instance: vlc.Instance,
+        finished: Callable[[], None],
+    ) -> None:
+        self._jobs.put(("instance", instance, finished))
+
+    def _run(self) -> None:
+        while True:
+            kind, target, finished = self._jobs.get()
+            try:
+                if kind == "player":
+                    try:
+                        target.stop()
+                    finally:
+                        target.release()
+                else:
+                    target.release()
+            except Exception:
+                pass
+            finally:
+                if finished is not None:
+                    try:
+                        finished()
+                    except Exception:
+                        pass
+                self._jobs.task_done()
+            if kind == "instance":
+                return
+
+
 class PlayerWindow(QMainWindow):
     cleanup_finished = Signal()
+    pane_cleanup_finished = Signal(object)
 
     def __init__(
         self,
@@ -320,6 +374,8 @@ class PlayerWindow(QMainWindow):
         self.library = application.library
         self.panes: list[MediaPane] = []
         self.shortcut_actions: dict[str, QAction] = {}
+        self._vlc_cleanup = SerialVlcCleanup()
+        self._completed_pane_cleanups = 0
         self._vlc_instance = self._create_vlc_instance()
         self.active_pane = self._create_pane()
         self._slider_dragging = False
@@ -338,6 +394,7 @@ class PlayerWindow(QMainWindow):
         self._cleanup_started = False
         self._cleanup_done = False
         self.cleanup_finished.connect(self._complete_close)
+        self.pane_cleanup_finished.connect(self._finalize_closed_pane)
 
         self.setWindowTitle("Aurora Player")
         self.resize(1180, 720)
@@ -383,12 +440,18 @@ class PlayerWindow(QMainWindow):
         return self.active_pane.surface
 
     def _create_vlc_instance(self) -> vlc.Instance:
-        instance = vlc.Instance(
+        options = [
             "--no-video-title-show",
             "--no-mouse-events",
             "--quiet",
             "--no-snapshot-preview",
-        )
+        ]
+        if sys.platform == "win32":
+            # VLC's default MMDevice output can deadlock while a playing pane
+            # is torn down. DirectSound uses the normal Windows mixer without
+            # the failing libmmdevice shutdown path.
+            options.append("--aout=directsound")
+        instance = vlc.Instance(*options)
         if instance is None:
             raise RuntimeError("The embedded media engine could not be initialized.")
         return instance
@@ -754,12 +817,17 @@ class PlayerWindow(QMainWindow):
         return pane
 
     def close_active_pane(self) -> None:
+        if self._cleanup_started:
+            return
         pane = self.active_pane
         self._save_resume_position(pane, force=True)
-        pane.player.stop()
+        player = pane.player
+        self._quiesce_pane(pane)
         if len(self.panes) == 1:
-            pane.player.set_media(None)
+            pane.player = pane.instance.media_player_new()
             pane.path = None
+            pane.end_advanced = False
+            pane.last_resume_write = 0.0
             pane.title_label.setText("Empty video pane")
             pane.title_label.setToolTip("Click the video to select this pane")
             pane.surface.update()
@@ -769,15 +837,45 @@ class PlayerWindow(QMainWindow):
             self.position_slider.setValue(0)
             self._relayout_panes()
             self.set_active_pane(pane)
+            self._vlc_cleanup.release_player(player)
             return
         index = self.panes.index(pane)
-        pane.player.release()
         self.panes.remove(pane)
         self.video_grid.removeWidget(pane.container)
         pane.container.hide()
-        pane.container.deleteLater()
         self._relayout_panes()
         self.set_active_pane(self.panes[min(index, len(self.panes) - 1)])
+        self._vlc_cleanup.release_player(
+            player,
+            lambda container=pane.container: (
+                self.pane_cleanup_finished.emit(container)
+            ),
+        )
+
+    def _quiesce_pane(self, pane: MediaPane) -> None:
+        """Silence and detach a pane before native cleanup is queued."""
+        try:
+            pane.player.audio_set_mute(True)
+        except Exception:
+            pass
+        try:
+            if pane.player.is_playing():
+                pane.player.set_pause(1)
+        except Exception:
+            pass
+        try:
+            if sys.platform == "win32":
+                pane.player.set_hwnd(0)
+            elif sys.platform.startswith("linux"):
+                pane.player.set_xwindow(0)
+            elif sys.platform == "darwin":
+                pane.player.set_nsobject(0)
+        except Exception:
+            pass
+
+    def _finalize_closed_pane(self, container: QWidget) -> None:
+        self._completed_pane_cleanups += 1
+        container.deleteLater()
 
     def close_pane(self, pane: MediaPane) -> None:
         self.set_active_pane(pane)
@@ -1833,49 +1931,29 @@ class PlayerWindow(QMainWindow):
         self._cleanup_started = True
         for pane in self.panes:
             self._save_resume_position(pane, force=True)
+            self._quiesce_pane(pane)
         self.timer.stop()
         self.pane_selection_timer.stop()
+        self.settings.sync()
+        self.application_controller.settings.sync()
         self.hide()
         event.ignore()
-        players = [pane.player for pane in self.panes]
+        for pane in self.panes:
+            self._vlc_cleanup.release_player(pane.player)
+        self._vlc_cleanup.finish(
+            self._vlc_instance, self.cleanup_finished.emit
+        )
+        # Native audio drivers should now close sequentially. If a third-party
+        # driver still blocks VLC forever, do not leave an invisible process
+        # behind after the user has explicitly exited the application.
+        QTimer.singleShot(5000, self._force_close_after_cleanup_timeout)
 
-        def release_players() -> None:
-            def release_one(player: vlc.MediaPlayer) -> None:
-                try:
-                    player.stop()
-                    player.release()
-                except Exception:
-                    pass
-
-            workers = [
-                threading.Thread(
-                    target=release_one,
-                    args=(player,),
-                    name=f"aurora-pane-cleanup-{index}",
-                    daemon=True,
-                )
-                for index, player in enumerate(players, start=1)
-            ]
-            for worker in workers:
-                worker.start()
-            for worker in workers:
-                worker.join()
-            try:
-                self._vlc_instance.release()
-            except Exception:
-                pass
-            self.cleanup_finished.emit()
-
-        threading.Thread(
-            target=release_players,
-            name="aurora-player-cleanup",
-            daemon=True,
-        ).start()
-        # Some media-engine builds can take an unbounded amount of time to
-        # release a native player. The window is already hidden, so let normal
-        # cleanup finish when it can, but never leave an invisible process
-        # running after the user closes the application.
-        QTimer.singleShot(750, self._complete_close)
+    def _force_close_after_cleanup_timeout(self) -> None:
+        if self._cleanup_done:
+            return
+        self.settings.sync()
+        self.application_controller.settings.sync()
+        os._exit(0)
 
     def _complete_close(self) -> None:
         if self._cleanup_done:
