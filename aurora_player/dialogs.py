@@ -6,6 +6,7 @@ from pathlib import Path
 
 import vlc
 from PySide6.QtCore import QProcess, QSettings, Qt, Signal
+from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -15,12 +16,16 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
+    QKeySequenceEdit,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
     QSlider,
     QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
 )
 
@@ -51,6 +56,92 @@ class DiscDialog(QDialog):
             "VCD": "vcd",
         }
         return f"{schemes[self.disc_type.currentText()]}:///{self.device.text().strip()}"
+
+
+class ShortcutEditorDialog(QDialog):
+    def __init__(
+        self,
+        definitions: dict[str, tuple[str, str]],
+        current: dict[str, str],
+        parent=None,
+    ) -> None:
+        super().__init__(parent)
+        self.definitions = definitions
+        self.editors: dict[str, QKeySequenceEdit] = {}
+        self.setWindowTitle("Keyboard shortcuts")
+        self.resize(620, 560)
+        layout = QVBoxLayout(self)
+        intro = QLabel(
+            "Select an action and press the new key combination. "
+            "Clear a field to disable that shortcut."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+        self.table = QTableWidget(len(definitions), 2)
+        self.table.setHorizontalHeaderLabels(["Action", "Shortcut"])
+        self.table.verticalHeader().hide()
+        self.table.setAlternatingRowColors(True)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.ResizeToContents
+        )
+        for row, (shortcut_id, (label, default)) in enumerate(definitions.items()):
+            name = QTableWidgetItem(label)
+            name.setFlags(name.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.table.setItem(row, 0, name)
+            editor = QKeySequenceEdit(
+                QKeySequence(current.get(shortcut_id, default)), self.table
+            )
+            editor.setClearButtonEnabled(True)
+            self.table.setCellWidget(row, 1, editor)
+            self.editors[shortcut_id] = editor
+        layout.addWidget(self.table, 1)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save
+            | QDialogButtonBox.StandardButton.Cancel
+        )
+        restore = buttons.addButton(
+            "Restore defaults", QDialogButtonBox.ButtonRole.ResetRole
+        )
+        restore.clicked.connect(self.restore_defaults)
+        buttons.accepted.connect(self.validate_and_accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def restore_defaults(self) -> None:
+        for shortcut_id, (_, default) in self.definitions.items():
+            self.editors[shortcut_id].setKeySequence(QKeySequence(default))
+
+    def selected_shortcuts(self) -> dict[str, str]:
+        portable = QKeySequence.SequenceFormat.PortableText
+        return {
+            shortcut_id: editor.keySequence().toString(portable)
+            for shortcut_id, editor in self.editors.items()
+        }
+
+    def validate_and_accept(self) -> None:
+        used: dict[str, str] = {}
+        duplicates: list[str] = []
+        for shortcut_id, sequence in self.selected_shortcuts().items():
+            if not sequence:
+                continue
+            label = self.definitions[shortcut_id][0]
+            if sequence in used:
+                duplicates.append(f"{sequence}: {used[sequence]} and {label}")
+            else:
+                used[sequence] = label
+        if duplicates:
+            QMessageBox.warning(
+                self,
+                "Duplicate shortcuts",
+                "Each shortcut can be assigned only once:\n\n"
+                + "\n".join(duplicates),
+            )
+            return
+        self.accept()
 
 
 class SyncDialog(QDialog):

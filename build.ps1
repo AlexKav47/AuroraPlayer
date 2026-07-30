@@ -14,11 +14,22 @@ if (-not $vlcSource) {
     throw "The build computer needs VLC so its redistributable engine can be embedded. Target computers will not need VLC."
 }
 
-if (-not (Test-Path -LiteralPath ".venv")) {
-    python -m venv .venv
+$buildPython = $env:AURORA_BUILD_PYTHON
+if ($buildPython) {
+    if (-not (Test-Path -LiteralPath $buildPython)) {
+        throw "AURORA_BUILD_PYTHON does not point to a Python executable: $buildPython"
+    }
+} else {
+    if (-not (Test-Path -LiteralPath ".venv")) {
+        python -m venv .venv
+    }
+    $buildPython = Join-Path $projectRoot ".venv\Scripts\python.exe"
 }
 
-& ".venv\Scripts\python.exe" -m pip install -r requirements.txt pyinstaller
+& $buildPython -c "import PySide6, vlc, PyInstaller"
+if ($LASTEXITCODE -ne 0) {
+    & $buildPython -m pip install -r requirements.txt pyinstaller
+}
 
 $pyinstallerArguments = @(
     "--noconfirm",
@@ -49,10 +60,10 @@ $pyinstallerArguments = @(
     (Join-Path $projectRoot "launcher.py")
 )
 
-& ".venv\Scripts\pyinstaller.exe" @pyinstallerArguments
+& $buildPython -m PyInstaller @pyinstallerArguments
 
 $portableFolder = Join-Path $projectRoot "release\AuroraPlayer"
-$portableZip = Join-Path $projectRoot "release\AuroraPlayer-Portable.zip"
+$portableZip = Join-Path $projectRoot "release\AuroraPlayer-v1.1.0-Portable.zip"
 $runtimeFolder = Join-Path $portableFolder "runtime"
 
 # Aurora uses its own Qt interface and English labels, so GUI front ends,
@@ -65,7 +76,6 @@ $pruneTargets = @(
     (Join-Path $runtimeFolder "PySide6\translations"),
     (Join-Path $runtimeFolder "PySide6\plugins\generic"),
     (Join-Path $runtimeFolder "PySide6\plugins\platforminputcontexts"),
-    (Join-Path $runtimeFolder "PySide6\plugins\tls"),
     (Join-Path $runtimeFolder "PySide6\plugins\imageformats\qpdf.dll"),
     (Join-Path $runtimeFolder "PySide6\plugins\platforms\qdirect2d.dll"),
     (Join-Path $runtimeFolder "PySide6\plugins\platforms\qminimal.dll"),
@@ -92,7 +102,7 @@ Compress-Archive -Path (Join-Path $portableFolder "*") -DestinationPath $portabl
 Write-Host ""
 Write-Host "Fast portable application built:"
 Write-Host "release\AuroraPlayer\AuroraPlayer.exe"
-Write-Host "release\AuroraPlayer-Portable.zip"
+Write-Host "release\AuroraPlayer-v1.1.0-Portable.zip"
 Write-Host ""
 Write-Host "Extract the ZIP once, then double-click AuroraPlayer.exe."
 Write-Host "The target computer does not need Python or VLC."

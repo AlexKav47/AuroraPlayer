@@ -5,15 +5,29 @@ import importlib.util
 import json
 import os
 import sys
+import time
 import traceback
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QStandardPaths, QTimer
-from PySide6.QtGui import QIcon
-from PySide6.QtNetwork import QLocalServer, QLocalSocket
+from PySide6.QtCore import QStandardPaths, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QIcon
+from PySide6.QtNetwork import (
+    QLocalServer,
+    QLocalSocket,
+    QNetworkAccessManager,
+    QNetworkReply,
+    QNetworkRequest,
+)
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+from . import __version__
 from .library import LibraryStore
+from .settings import application_settings
+from .updates import (
+    GITHUB_LATEST_RELEASE_API,
+    GITHUB_RELEASES_URL,
+    is_newer_version,
+)
 from .vlc_runtime import configure_vlc_runtime, find_vlc_executable
 
 VLC_RUNTIME_DIR = configure_vlc_runtime()
@@ -111,12 +125,14 @@ BUILTIN_THEMES = {
 class AuroraApplication:
     def __init__(self, qt_app: QApplication) -> None:
         self.qt_app = qt_app
-        self.settings = QSettings("AuroraPlayer", "AuroraPlayer")
+        self.settings = application_settings()
         self.library = LibraryStore()
         self.windows: list[PlayerWindow] = []
         self.themes = BUILTIN_THEMES
         self.vlc_executable = find_vlc_executable(VLC_RUNTIME_DIR)
         self._loaded_extensions: list[object] = []
+        self.network = QNetworkAccessManager(qt_app)
+        self._update_reply: QNetworkReply | None = None
 
     def start(self, media_locations: list[str]) -> None:
         selected_skin = str(self.settings.value("appearance/skin", "dark"))
@@ -130,6 +146,7 @@ class AuroraApplication:
             self.apply_skin(selected_skin)
         self.load_extensions()
         self.open_locations(media_locations)
+        QTimer.singleShot(2500, self._automatic_update_check)
 
     def open_locations(self, media_locations: list[str]) -> None:
         window = self.new_window()
@@ -193,6 +210,115 @@ class AuroraApplication:
         self.settings.setValue("appearance/skin", "custom")
         self.settings.setValue("appearance/custom_skin", path)
 
+    def set_automatic_updates(self, enabled: bool) -> None:
+        self.settings.setValue("updates/automatic", enabled)
+
+    def _automatic_update_check(self) -> None:
+        enabled = (
+            str(self.settings.value("updates/automatic", "true")).lower()
+            == "true"
+        )
+        if not enabled:
+            return
+        last_check = float(self.settings.value("updates/last_check", 0) or 0)
+        if time.time() - last_check >= 24 * 60 * 60:
+            self.check_for_updates(manual=False)
+
+    def check_for_updates(self, manual: bool = False) -> None:
+        if self._update_reply is not None:
+            if manual and self.windows:
+                self.windows[0].statusBar().showMessage(
+                    "An update check is already running.", 3000
+                )
+            return
+        if manual and self.windows:
+            self.windows[0].statusBar().showMessage(
+                "Checking GitHub for updates…"
+            )
+        request = QNetworkRequest(QUrl(GITHUB_LATEST_RELEASE_API))
+        request.setRawHeader(b"Accept", b"application/vnd.github+json")
+        request.setRawHeader(
+            b"User-Agent", f"AuroraPlayer/{__version__}".encode("ascii")
+        )
+        reply = self.network.get(request)
+        self._update_reply = reply
+        reply.finished.connect(
+            lambda current=reply, requested=manual: self._finish_update_check(
+                current, requested
+            )
+        )
+        QTimer.singleShot(
+            10_000,
+            lambda current=reply: (
+                current.abort()
+                if self._update_reply is current and current.isRunning()
+                else None
+            ),
+        )
+
+    def _finish_update_check(
+        self, reply: QNetworkReply, manual: bool
+    ) -> None:
+        if self._update_reply is not reply:
+            reply.deleteLater()
+            return
+        self._update_reply = None
+        parent = self.windows[0] if self.windows else None
+        if reply.error() != QNetworkReply.NetworkError.NoError:
+            error = reply.errorString()
+            reply.deleteLater()
+            if manual:
+                QMessageBox.warning(
+                    parent,
+                    "Update check",
+                    "Aurora Player could not check GitHub for updates.\n\n"
+                    f"{error}",
+                )
+            return
+        try:
+            payload = json.loads(bytes(reply.readAll()).decode("utf-8"))
+            latest_version = str(payload["tag_name"])
+            release_url = str(payload.get("html_url", GITHUB_RELEASES_URL))
+        except (KeyError, TypeError, ValueError, UnicodeDecodeError):
+            reply.deleteLater()
+            if manual:
+                QMessageBox.warning(
+                    parent,
+                    "Update check",
+                    "GitHub returned an update response Aurora Player could not read.",
+                )
+            return
+        reply.deleteLater()
+        self.settings.setValue("updates/last_check", time.time())
+        if not release_url.startswith(
+            "https://github.com/AlexKav47/AuroraPlayer/"
+        ):
+            release_url = GITHUB_RELEASES_URL
+        if is_newer_version(latest_version, __version__):
+            message = QMessageBox(parent)
+            message.setWindowTitle("Aurora Player update available")
+            message.setIcon(QMessageBox.Icon.Information)
+            message.setText(
+                f"Aurora Player {latest_version.lstrip('v')} is available."
+            )
+            message.setInformativeText(
+                f"You currently have version {__version__}. "
+                "Open the GitHub release page to download it?"
+            )
+            message.setStandardButtons(
+                QMessageBox.StandardButton.Open
+                | QMessageBox.StandardButton.Cancel
+            )
+            message.setDefaultButton(QMessageBox.StandardButton.Open)
+            if message.exec() == QMessageBox.StandardButton.Open:
+                QDesktopServices.openUrl(QUrl(release_url))
+        elif manual:
+            QMessageBox.information(
+                parent,
+                "Aurora Player is up to date",
+                f"Version {__version__} is the latest available release.",
+            )
+
     def load_extensions(self) -> None:
         locations = [Path(__file__).parent / "extensions"]
         portable_root = os.environ.get("AURORA_DATA_DIR")
@@ -243,14 +369,6 @@ def parse_args(arguments: list[str]) -> argparse.Namespace:
 
 def main(arguments: list[str] | None = None) -> int:
     namespace = parse_args(sys.argv[1:] if arguments is None else arguments)
-    portable_root = os.environ.get("AURORA_DATA_DIR")
-    if portable_root:
-        QSettings.setDefaultFormat(QSettings.Format.IniFormat)
-        QSettings.setPath(
-            QSettings.Format.IniFormat,
-            QSettings.Scope.UserScope,
-            str(Path(portable_root).expanduser().resolve()),
-        )
     qt_app = QApplication(sys.argv[:1])
     qt_app.setApplicationName("Aurora Player")
     qt_app.setApplicationDisplayName("Aurora Player")

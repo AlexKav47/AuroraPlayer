@@ -52,6 +52,33 @@ MEDIA_EXTENSIONS = {
 }
 
 
+def expand_media_paths(paths: Iterable[str | Path]) -> list[str]:
+    """Resolve dropped files and recursively expand dropped folders."""
+    media: list[str] = []
+    seen: set[str] = set()
+    for raw_path in paths:
+        path = Path(raw_path).expanduser().resolve()
+        candidates = (
+            (path,)
+            if path.is_file()
+            else (
+                candidate
+                for candidate in path.rglob("*")
+                if candidate.is_file()
+            )
+            if path.is_dir()
+            else ()
+        )
+        for candidate in candidates:
+            if candidate.suffix.lower() not in MEDIA_EXTENSIONS:
+                continue
+            normalized = str(candidate.resolve())
+            if normalized not in seen:
+                seen.add(normalized)
+                media.append(normalized)
+    return sorted(media, key=str.casefold)
+
+
 @dataclass(slots=True)
 class LibraryItem:
     path: str
@@ -96,6 +123,16 @@ class LibraryStore:
             CREATE TABLE IF NOT EXISTS folders (
                 path TEXT PRIMARY KEY,
                 added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        self.connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS playback_positions (
+                location TEXT PRIMARY KEY,
+                position_ms INTEGER NOT NULL,
+                duration_ms INTEGER NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
@@ -212,6 +249,59 @@ class LibraryStore:
         )
         self.connection.commit()
         return removed
+
+    def playback_position(self, location: str) -> tuple[int, int] | None:
+        row = self.connection.execute(
+            """
+            SELECT position_ms, duration_ms
+            FROM playback_positions
+            WHERE location = ?
+            """,
+            (location,),
+        ).fetchone()
+        if row is None:
+            return None
+        return int(row["position_ms"]), int(row["duration_ms"])
+
+    def save_playback_position(
+        self, location: str, position_ms: int, duration_ms: int
+    ) -> None:
+        position_ms = max(0, int(position_ms))
+        duration_ms = max(0, int(duration_ms))
+        # Starting over, or reaching the final few seconds, should make the next
+        # launch begin at the start instead of resuming an already-finished item.
+        if (
+            position_ms < 10_000
+            or (
+                duration_ms > 0
+                and position_ms
+                >= min(duration_ms - 15_000, duration_ms * 0.95)
+            )
+        ):
+            self.clear_playback_position(location)
+            return
+        self.connection.execute(
+            """
+            INSERT INTO playback_positions(location, position_ms, duration_ms)
+            VALUES (?, ?, ?)
+            ON CONFLICT(location) DO UPDATE SET
+                position_ms=excluded.position_ms,
+                duration_ms=excluded.duration_ms,
+                updated_at=CURRENT_TIMESTAMP
+            """,
+            (location, position_ms, duration_ms),
+        )
+        self.connection.commit()
+
+    def clear_playback_position(self, location: str) -> None:
+        self.connection.execute(
+            "DELETE FROM playback_positions WHERE location = ?", (location,)
+        )
+        self.connection.commit()
+
+    def clear_playback_positions(self) -> None:
+        self.connection.execute("DELETE FROM playback_positions")
+        self.connection.commit()
 
 
 def save_m3u(path: str | Path, media_paths: Iterable[str]) -> None:

@@ -1,5 +1,5 @@
 #define MyAppName "Aurora Player"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "Aurora Player"
 #define MyAppExeName "AuroraPlayer.exe"
 #define MyAppId "{{8C9D7C2E-62D9-4F58-A247-568BBD25CF11}"
@@ -27,7 +27,7 @@ OutputBaseFilename=AuroraPlayer-Setup-Test
 PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=commandline
 OutputDir=..\release
-OutputBaseFilename=AuroraPlayer-Setup
+OutputBaseFilename=AuroraPlayer-v{#MyAppVersion}-Setup
 #endif
 SetupIconFile=..\aurora_player\assets\aurora-player.ico
 Compression=lzma2/ultra64

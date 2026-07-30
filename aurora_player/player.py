@@ -4,12 +4,13 @@ import os
 import sys
 import threading
 import ctypes
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Iterable
 
 import vlc
-from PySide6.QtCore import QSettings, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -17,6 +18,7 @@ from PySide6.QtGui import (
     QCursor,
     QDragEnterEvent,
     QDropEvent,
+    QKeySequence,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -38,7 +40,6 @@ from PySide6.QtWidgets import (
     QSlider,
     QStyle,
     QTabWidget,
-    QToolBar,
     QToolTip,
     QTreeWidget,
     QTreeWidgetItem,
@@ -50,14 +51,48 @@ from .dialogs import (
     AudioEffectsDialog,
     ConverterDialog,
     DiscDialog,
+    ShortcutEditorDialog,
     SubtitleStyleDialog,
     SyncDialog,
     VideoEffectsDialog,
 )
-from .library import LibraryStore, load_m3u, save_m3u
+from . import __version__
+from .library import LibraryStore, expand_media_paths, load_m3u, save_m3u
+from .settings import application_settings
 
 if TYPE_CHECKING:
     from .app import AuroraApplication
+
+
+SHORTCUT_DEFINITIONS: dict[str, tuple[str, str]] = {
+    "open_files": ("Open file(s)", "Ctrl+O"),
+    "open_folder": ("Open folder", "Ctrl+Shift+O"),
+    "open_disc": ("Open disc", "Ctrl+D"),
+    "open_url": ("Open network URL", "Ctrl+L"),
+    "add_pane": ("Add video pane", "Ctrl+N"),
+    "convert": ("Convert or transcode", "Ctrl+R"),
+    "save_playlist": ("Save playlist", "Ctrl+S"),
+    "close_window": ("Close window", "Ctrl+W"),
+    "play_pause": ("Play or pause active pane", "Space"),
+    "play_pause_all": ("Play or pause all panes", "Ctrl+Space"),
+    "stop": ("Stop", "S"),
+    "next_frame": ("Next frame", "E"),
+    "set_a": ("Set A loop point", "["),
+    "set_b": ("Set B loop point", "]"),
+    "clear_ab": ("Clear A–B loop", "\\"),
+    "seek_back_5": ("Seek backward 5 seconds", "Left"),
+    "seek_forward_5": ("Seek forward 5 seconds", "Right"),
+    "seek_back_30": ("Seek backward 30 seconds", "Shift+Left"),
+    "seek_forward_30": ("Seek forward 30 seconds", "Shift+Right"),
+    "volume_up": ("Volume up", "Up"),
+    "volume_down": ("Volume down", "Down"),
+    "mute": ("Mute", "M"),
+    "fullscreen": ("Enter or leave fullscreen", "F11"),
+    "fullscreen_alternate": ("Fullscreen alternate", "Ctrl+F"),
+    "leave_fullscreen": ("Leave fullscreen", "Esc"),
+    "close_pane": ("Close active pane", "Ctrl+Shift+W"),
+    "toggle_sidebar": ("Show or hide sidebar", "Ctrl+B"),
+}
 
 
 def format_time(milliseconds: int) -> str:
@@ -213,6 +248,35 @@ class VideoSurface(QWidget):
         super().mouseReleaseEvent(event)
 
 
+class MediaDropArea(QWidget):
+    files_dropped = Signal(list)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.setToolTip("Drop video or audio files and folders here")
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        if event.mimeData().hasUrls() and any(
+            url.isLocalFile() for url in event.mimeData().urls()
+        ):
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        paths = [
+            url.toLocalFile()
+            for url in event.mimeData().urls()
+            if url.isLocalFile()
+        ]
+        if paths:
+            self.files_dropped.emit(paths)
+            event.acceptProposedAction()
+            return
+        super().dropEvent(event)
+
+
 class FullWidthTabWidget(QTabWidget):
     """Keep sidebar tab headings evenly spread across the entire dock."""
 
@@ -239,6 +303,7 @@ class MediaPane:
     player: vlc.MediaPlayer
     path: str | None = None
     end_advanced: bool = False
+    last_resume_write: float = 0.0
 
 
 class PlayerWindow(QMainWindow):
@@ -251,9 +316,10 @@ class PlayerWindow(QMainWindow):
     ) -> None:
         super().__init__()
         self.application_controller = application
-        self.settings = QSettings("AuroraPlayer", "AuroraPlayer")
+        self.settings = application_settings()
         self.library = application.library
         self.panes: list[MediaPane] = []
+        self.shortcut_actions: dict[str, QAction] = {}
         self._vlc_instance = self._create_vlc_instance()
         self.active_pane = self._create_pane()
         self._slider_dragging = False
@@ -364,7 +430,9 @@ class PlayerWindow(QMainWindow):
             instance=instance,
             player=instance.media_player_new(),
         )
-        pane.surface.files_dropped.connect(self.add_files)
+        pane.surface.files_dropped.connect(
+            lambda paths, target=pane: self.add_dropped_paths(paths, target)
+        )
         pane.surface.toggle_fullscreen.connect(self.toggle_fullscreen)
         pane.surface.seek_gesture.connect(self.seek_relative)
         pane.surface.volume_gesture.connect(self.adjust_volume)
@@ -385,7 +453,10 @@ class PlayerWindow(QMainWindow):
         central_layout = QVBoxLayout(central)
         central_layout.setContentsMargins(0, 0, 0, 0)
         central_layout.setSpacing(0)
-        self.video_area = QWidget()
+        self.video_area = MediaDropArea()
+        self.video_area.files_dropped.connect(
+            lambda paths: self.add_dropped_paths(paths)
+        )
         self.video_grid = QGridLayout(self.video_area)
         self.video_grid.setContentsMargins(0, 0, 0, 0)
         self.video_grid.setSpacing(3)
@@ -634,6 +705,37 @@ class PlayerWindow(QMainWindow):
             self._select_pane_at_global_position(QCursor.pos())
         self._pane_mouse_was_down = mouse_down
 
+    def _pane_at_global_position(self, position) -> MediaPane | None:
+        for pane in self.panes:
+            if pane.path is None or not pane.container.isVisible():
+                continue
+            local_position = pane.container.mapFromGlobal(position)
+            if pane.container.rect().contains(local_position):
+                return pane
+        return None
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        if event.mimeData().hasUrls() and any(
+            url.isLocalFile() for url in event.mimeData().urls()
+        ):
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        paths = [
+            url.toLocalFile()
+            for url in event.mimeData().urls()
+            if url.isLocalFile()
+        ]
+        if not paths:
+            super().dropEvent(event)
+            return
+        position = self.mapToGlobal(event.position().toPoint())
+        target = self._pane_at_global_position(position)
+        self.add_dropped_paths(paths, target)
+        event.acceptProposedAction()
+
     def add_pane(self, path: str | None = None) -> MediaPane | None:
         if path is None:
             self.choose_files()
@@ -653,6 +755,7 @@ class PlayerWindow(QMainWindow):
 
     def close_active_pane(self) -> None:
         pane = self.active_pane
+        self._save_resume_position(pane, force=True)
         pane.player.stop()
         if len(self.panes) == 1:
             pane.player.set_media(None)
@@ -696,30 +799,82 @@ class PlayerWindow(QMainWindow):
 
     def _build_menus(self) -> None:
         file_menu = self.menuBar().addMenu("&File")
-        self._action(file_menu, "Open file(s)…", self.choose_files, "Ctrl+O")
-        self._action(file_menu, "Open folder…", self.choose_folder, "Ctrl+Shift+O")
-        self._action(file_menu, "Open disc…", self.open_disc, "Ctrl+D")
-        self._action(file_menu, "Open network URL…", self.open_url, "Ctrl+L")
+        self._action(
+            file_menu, "Open file(s)…", self.choose_files, shortcut_id="open_files"
+        )
+        self._action(
+            file_menu, "Open folder…", self.choose_folder, shortcut_id="open_folder"
+        )
+        self._action(
+            file_menu, "Open disc…", self.open_disc, shortcut_id="open_disc"
+        )
+        self._action(
+            file_menu, "Open network URL…", self.open_url, shortcut_id="open_url"
+        )
         self._action(file_menu, "Load external subtitle…", self.load_subtitle)
         file_menu.addSeparator()
-        self._action(file_menu, "Add video pane", self.choose_files, "Ctrl+N")
-        self._action(file_menu, "Convert / transcode…", self.show_converter, "Ctrl+R")
+        self._action(
+            file_menu, "Add video pane", self.choose_files, shortcut_id="add_pane"
+        )
+        self._action(
+            file_menu,
+            "Convert / transcode…",
+            self.show_converter,
+            shortcut_id="convert",
+        )
         file_menu.addSeparator()
-        self._action(file_menu, "Save playlist…", self.save_playlist, "Ctrl+S")
+        self._action(
+            file_menu,
+            "Save playlist…",
+            self.save_playlist,
+            shortcut_id="save_playlist",
+        )
         self._action(file_menu, "Load playlist…", self.load_playlist)
         file_menu.addSeparator()
-        self._action(file_menu, "Close window", self.close, "Ctrl+W")
+        self._action(
+            file_menu, "Close window", self.close, shortcut_id="close_window"
+        )
 
         playback = self.menuBar().addMenu("&Playback")
-        self._action(playback, "Play / pause", self.toggle_play, "Space")
-        self._action(playback, "Play / pause all panes", self.toggle_all, "Ctrl+Space")
-        self._action(playback, "Stop", self.stop, "S")
-        self._action(playback, "Next frame", self.next_frame, "E")
+        self._action(
+            playback, "Play / pause", self.toggle_play, shortcut_id="play_pause"
+        )
+        self._action(
+            playback,
+            "Play / pause all panes",
+            self.toggle_all,
+            shortcut_id="play_pause_all",
+        )
+        self._action(playback, "Stop", self.stop, shortcut_id="stop")
+        self._action(
+            playback, "Next frame", self.next_frame, shortcut_id="next_frame"
+        )
         playback.addSeparator()
-        self._action(playback, "Set A point", self.set_a_point, "[")
-        self._action(playback, "Set B point", self.set_b_point, "]")
-        self._action(playback, "Clear A–B loop", self.clear_ab_loop, "\\")
+        self._action(
+            playback, "Set A point", self.set_a_point, shortcut_id="set_a"
+        )
+        self._action(
+            playback, "Set B point", self.set_b_point, shortcut_id="set_b"
+        )
+        self._action(
+            playback,
+            "Clear A–B loop",
+            self.clear_ab_loop,
+            shortcut_id="clear_ab",
+        )
         self._action(playback, "Synchronize audio/subtitles…", self.show_sync)
+        playback.addSeparator()
+        resume_action = self._action(
+            playback, "Resume playback automatically", self.set_resume_enabled
+        )
+        resume_action.setCheckable(True)
+        resume_action.setChecked(
+            str(self.settings.value("playback/resume_enabled", "true")).lower()
+            == "true"
+        )
+        self._action(
+            playback, "Clear saved playback positions…", self.clear_resume_history
+        )
 
         self.audio_menu = self.menuBar().addMenu("&Audio")
         self.audio_tracks_menu = self.audio_menu.addMenu("Audio track")
@@ -775,15 +930,23 @@ class PlayerWindow(QMainWindow):
             )
         self._action(video_menu, "Video effects…", self.show_video_effects)
         self._action(
-            video_menu, "Close active pane", self.close_active_pane, "Ctrl+Shift+W"
+            video_menu,
+            "Close active pane",
+            self.close_active_pane,
+            shortcut_id="close_pane",
         )
-        self._action(video_menu, "Fullscreen (F11)", self.toggle_fullscreen)
+        self._action(
+            video_menu,
+            "Fullscreen",
+            self.toggle_fullscreen,
+            shortcut_id="fullscreen",
+        )
         video_menu.aboutToShow.connect(self._refresh_video_tracks)
 
         view_menu = self.menuBar().addMenu("&View")
         sidebar_action = self.sidebar.toggleViewAction()
         sidebar_action.setText("Show / hide sidebar")
-        sidebar_action.setShortcut("Ctrl+B")
+        self._register_shortcut_action("toggle_sidebar", sidebar_action)
         view_menu.addAction(sidebar_action)
         skins = view_menu.addMenu("Skin")
         theme_group = QActionGroup(skins)
@@ -802,29 +965,58 @@ class PlayerWindow(QMainWindow):
             theme_group.addAction(action)
         skins.addSeparator()
         self._action(skins, "Import QSS skin…", self.import_skin)
+        view_menu.addSeparator()
+        self._action(
+            view_menu, "Customize keyboard shortcuts…", self.show_shortcut_editor
+        )
 
         help_menu = self.menuBar().addMenu("&Help")
         self._action(help_menu, "Keyboard and mouse controls", self.show_controls)
+        self._action(
+            help_menu,
+            "Check for updates…",
+            lambda: self.application_controller.check_for_updates(manual=True),
+        )
+        automatic_updates = self._action(
+            help_menu,
+            "Check for updates automatically",
+            self.application_controller.set_automatic_updates,
+        )
+        automatic_updates.setCheckable(True)
+        automatic_updates.setChecked(
+            str(self.settings.value("updates/automatic", "true")).lower() == "true"
+        )
+        help_menu.addSeparator()
         self._action(help_menu, "About Aurora Player", self.show_about)
 
     def _bind_shortcuts(self) -> None:
-        shortcuts = [
-            ("Left", lambda: self.seek_relative(-5000)),
-            ("Right", lambda: self.seek_relative(5000)),
-            ("Shift+Left", lambda: self.seek_relative(-30000)),
-            ("Shift+Right", lambda: self.seek_relative(30000)),
-            ("Up", lambda: self.adjust_volume(5)),
-            ("Down", lambda: self.adjust_volume(-5)),
-            ("M", self.toggle_mute),
-            ("Ctrl+F", self.toggle_fullscreen),
-            ("F11", self.toggle_fullscreen),
-            ("Esc", self.leave_fullscreen),
-        ]
-        for key, callback in shortcuts:
+        shortcuts = {
+            "seek_back_5": lambda: self.seek_relative(-5000),
+            "seek_forward_5": lambda: self.seek_relative(5000),
+            "seek_back_30": lambda: self.seek_relative(-30000),
+            "seek_forward_30": lambda: self.seek_relative(30000),
+            "volume_up": lambda: self.adjust_volume(5),
+            "volume_down": lambda: self.adjust_volume(-5),
+            "mute": self.toggle_mute,
+            "fullscreen_alternate": self.toggle_fullscreen,
+            "leave_fullscreen": self.leave_fullscreen,
+        }
+        for shortcut_id, callback in shortcuts.items():
             action = QAction(self)
-            action.setShortcut(key)
             action.triggered.connect(callback)
             self.addAction(action)
+            self._register_shortcut_action(shortcut_id, action)
+
+    def _shortcut_value(self, shortcut_id: str) -> str:
+        default = SHORTCUT_DEFINITIONS[shortcut_id][1]
+        return str(self.settings.value(f"shortcuts/{shortcut_id}", default))
+
+    def _register_shortcut_action(
+        self, shortcut_id: str, action: QAction
+    ) -> QAction:
+        action.setShortcut(QKeySequence(self._shortcut_value(shortcut_id)))
+        self.shortcut_actions[shortcut_id] = action
+        return action
 
     def _action(
         self,
@@ -832,9 +1024,12 @@ class PlayerWindow(QMainWindow):
         text: str,
         callback,
         shortcut: str | None = None,
+        shortcut_id: str | None = None,
     ) -> QAction:
         action = QAction(text, self)
-        if shortcut:
+        if shortcut_id:
+            self._register_shortcut_action(shortcut_id, action)
+        elif shortcut:
             action.setShortcut(shortcut)
         action.triggered.connect(callback)
         menu.addAction(action)
@@ -865,16 +1060,24 @@ class PlayerWindow(QMainWindow):
     def choose_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Open media folder")
         if folder:
-            from .library import MEDIA_EXTENSIONS
+            self.add_files(expand_media_paths([folder]))
 
-            paths = sorted(
-                str(path)
-                for path in Path(folder).iterdir()
-                if path.is_file() and path.suffix.lower() in MEDIA_EXTENSIONS
+    def add_dropped_paths(
+        self, paths: Iterable[str], target_pane: MediaPane | None = None
+    ) -> None:
+        expanded = expand_media_paths(paths)
+        if not expanded:
+            self.statusBar().showMessage(
+                "No supported media files were found in the dropped items.", 5000
             )
-            self.add_files(paths)
+            return
+        self.add_files(expanded, preferred_pane=target_pane)
 
-    def add_files(self, paths: Iterable[str]) -> None:
+    def add_files(
+        self,
+        paths: Iterable[str],
+        preferred_pane: MediaPane | None = None,
+    ) -> None:
         first_new_index = self.playlist.count()
         valid: list[str] = []
         for raw_path in paths:
@@ -890,8 +1093,11 @@ class PlayerWindow(QMainWindow):
             self.library.add_paths(valid)
             self.refresh_library()
             self.playlist.setCurrentRow(first_new_index)
+            pending = list(valid)
+            if preferred_pane in self.panes and pending:
+                self.open_media(pending.pop(0), preferred_pane)
             queued = 0
-            for path in valid:
+            for path in pending:
                 target = next(
                     (pane for pane in self.panes if pane.path is None), None
                 )
@@ -911,7 +1117,9 @@ class PlayerWindow(QMainWindow):
         self, location: str, pane: MediaPane | None = None
     ) -> None:
         pane = pane or self.active_pane
+        self._save_resume_position(pane, force=True)
         pane.path = location
+        pane.last_resume_write = time.monotonic()
         self._relayout_panes()
         self.set_active_pane(pane)
         media = pane.instance.media_new(location)
@@ -930,6 +1138,85 @@ class PlayerWindow(QMainWindow):
         QTimer.singleShot(
             350, lambda target=pane: self._apply_live_settings(target)
         )
+        QTimer.singleShot(
+            700,
+            lambda target=pane, expected=location: self._resume_media(
+                target, expected
+            ),
+        )
+
+    def _resume_enabled(self) -> bool:
+        return (
+            str(self.settings.value("playback/resume_enabled", "true")).lower()
+            == "true"
+        )
+
+    def set_resume_enabled(self, enabled: bool) -> None:
+        self.settings.setValue("playback/resume_enabled", enabled)
+        self.statusBar().showMessage(
+            "Playback resume enabled." if enabled else "Playback resume disabled.",
+            3000,
+        )
+
+    def _resume_media(self, pane: MediaPane, expected_location: str) -> None:
+        if (
+            self._cleanup_started
+            or not self._resume_enabled()
+            or pane not in self.panes
+            or pane.path != expected_location
+            or "://" in expected_location
+        ):
+            return
+        saved = self.library.playback_position(expected_location)
+        if saved is None:
+            return
+        position_ms, saved_duration_ms = saved
+        duration_ms = max(0, pane.player.get_length(), saved_duration_ms)
+        if position_ms < 10_000 or (
+            duration_ms > 0 and position_ms >= duration_ms - 15_000
+        ):
+            self.library.clear_playback_position(expected_location)
+            return
+        pane.player.set_time(position_ms)
+        if pane is self.active_pane:
+            self.statusBar().showMessage(
+                f"Resumed at {format_time(position_ms)}", 5000
+            )
+
+    def _save_resume_position(
+        self, pane: MediaPane, force: bool = False
+    ) -> None:
+        if (
+            not self._resume_enabled()
+            or not pane.path
+            or "://" in pane.path
+        ):
+            return
+        now = time.monotonic()
+        if not force and now - pane.last_resume_write < 5.0:
+            return
+        position_ms = pane.player.get_time()
+        duration_ms = pane.player.get_length()
+        if position_ms >= 0:
+            self.library.save_playback_position(
+                pane.path, position_ms, duration_ms
+            )
+            pane.last_resume_write = now
+
+    def clear_resume_history(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "Clear saved playback positions",
+            "Forget every saved resume position?",
+            QMessageBox.StandardButton.Yes
+            | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self.library.clear_playback_positions()
+            self.statusBar().showMessage(
+                "Saved playback positions cleared.", 3000
+            )
 
     def _apply_media_options(self, media: vlc.Media) -> None:
         size = int(self.settings.value("subtitles/font_size", 24))
@@ -1206,6 +1493,7 @@ class PlayerWindow(QMainWindow):
                 pane.player.play()
 
     def stop(self) -> None:
+        self._save_resume_position(self.active_pane, force=True)
         self.player.stop()
 
     def next_frame(self) -> None:
@@ -1296,12 +1584,15 @@ class PlayerWindow(QMainWindow):
         )
         self.play_button.setIcon(self.style().standardIcon(icon))
         for pane in self.panes:
+            self._save_resume_position(pane)
             pane_icon = (
                 QStyle.StandardPixmap.SP_MediaPause
                 if pane.player.is_playing()
                 else QStyle.StandardPixmap.SP_MediaPlay
             )
             pane.play_button.setIcon(self.style().standardIcon(pane_icon))
+            if pane.player.get_state() == vlc.State.Ended and pane.path:
+                self.library.clear_playback_position(pane.path)
         if (
             self._ab_start is not None
             and self._ab_end is not None
@@ -1458,29 +1749,61 @@ class PlayerWindow(QMainWindow):
         if path:
             self.application_controller.apply_custom_skin(path)
 
+    def show_shortcut_editor(self) -> None:
+        portable = QKeySequence.SequenceFormat.PortableText
+        current = {
+            shortcut_id: action.shortcut().toString(portable)
+            for shortcut_id, action in self.shortcut_actions.items()
+        }
+        dialog = ShortcutEditorDialog(
+            SHORTCUT_DEFINITIONS, current, self
+        )
+        if not dialog.exec():
+            return
+        for shortcut_id, sequence in dialog.selected_shortcuts().items():
+            self.settings.setValue(f"shortcuts/{shortcut_id}", sequence)
+            action = self.shortcut_actions.get(shortcut_id)
+            if action is not None:
+                action.setShortcut(QKeySequence(sequence))
+        self.settings.sync()
+        self.statusBar().showMessage("Keyboard shortcuts updated.", 3000)
+
+    def _shortcut_text(self, shortcut_id: str) -> str:
+        action = self.shortcut_actions.get(shortcut_id)
+        if action is None:
+            return ""
+        return action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
+
     def show_controls(self) -> None:
         QMessageBox.information(
             self,
             "Controls",
-            "Space — Play/pause\n"
-            "Left/Right — Seek 5 seconds\n"
-            "Shift+Left/Right — Seek 30 seconds\n"
-            "Up/Down — Volume\n"
-            "E — Next frame\n"
-            "[ / ] — Set A/B loop points\n"
-            "\\ — Clear A/B loop\n"
-            "F11 or double-click video — Enter/leave fullscreen\n"
-            "Esc — Leave fullscreen\n"
+            f"{self._shortcut_text('play_pause')} — Play/pause\n"
+            f"{self._shortcut_text('seek_back_5')} / "
+            f"{self._shortcut_text('seek_forward_5')} — Seek 5 seconds\n"
+            f"{self._shortcut_text('seek_back_30')} / "
+            f"{self._shortcut_text('seek_forward_30')} — Seek 30 seconds\n"
+            f"{self._shortcut_text('volume_up')} / "
+            f"{self._shortcut_text('volume_down')} — Volume\n"
+            f"{self._shortcut_text('next_frame')} — Next frame\n"
+            f"{self._shortcut_text('set_a')} / "
+            f"{self._shortcut_text('set_b')} — Set A/B loop points\n"
+            f"{self._shortcut_text('clear_ab')} — Clear A/B loop\n"
+            f"{self._shortcut_text('fullscreen')} or double-click video — "
+            "Enter/leave fullscreen\n"
+            f"{self._shortcut_text('leave_fullscreen')} — Leave fullscreen\n"
             "Right-drag horizontally — Seek\n"
             "Right-drag vertically — Volume\n"
-            "Ctrl+N — Add video pane (maximum four)\n"
+            f"{self._shortcut_text('add_pane')} — Add video pane (maximum four)\n"
             "Click a pane — Make it active\n"
             "Pane play button — Pause/resume only that video\n"
-            "Ctrl+Space — Play/pause all panes\n"
-            "Ctrl+B — Show/hide sidebar\n"
+            f"{self._shortcut_text('play_pause_all')} — Play/pause all panes\n"
+            f"{self._shortcut_text('toggle_sidebar')} — Show/hide sidebar\n"
             "Click timeline — Seek directly to that time\n"
             "Hover timeline — Preview the exact time\n"
-            "Click or hover volume — Set or preview the level",
+            "Click or hover volume — Set or preview the level\n"
+            "Drop files or folders on a pane — Open them there\n\n"
+            "Change shortcuts under View → Customize keyboard shortcuts.",
         )
 
     def show_about(self) -> None:
@@ -1488,7 +1811,7 @@ class PlayerWindow(QMainWindow):
         QMessageBox.about(
             self,
             "Aurora Player",
-            f"<b>Aurora Player 1.0.0</b><br>"
+            f"<b>Aurora Player {__version__}</b><br>"
             f"Cross-platform media player powered by Qt and libVLC {version}.<br><br>"
             "One window can play up to four videos in a 2×2 grid.",
         )
@@ -1508,6 +1831,8 @@ class PlayerWindow(QMainWindow):
             event.ignore()
             return
         self._cleanup_started = True
+        for pane in self.panes:
+            self._save_resume_position(pane, force=True)
         self.timer.stop()
         self.pane_selection_timer.stop()
         self.hide()

@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from aurora_player.library import LibraryStore, load_m3u, save_m3u
+from aurora_player.library import (
+    LibraryStore,
+    expand_media_paths,
+    load_m3u,
+    save_m3u,
+)
 from aurora_player.player import format_time
 
 
@@ -48,3 +53,31 @@ def test_format_time() -> None:
     assert format_time(0) == "0:00"
     assert format_time(65_000) == "1:05"
     assert format_time(3_665_000) == "1:01:05"
+
+
+def test_expand_media_paths_handles_files_and_recursive_folders(
+    tmp_path: Path,
+) -> None:
+    folder = tmp_path / "Shows"
+    nested = folder / "Season 1"
+    nested.mkdir(parents=True)
+    episode = nested / "Episode.mkv"
+    song = folder / "Song.FLAC"
+    ignored = folder / "notes.txt"
+    for path in (episode, song, ignored):
+        path.write_bytes(b"test")
+
+    assert expand_media_paths([folder, episode]) == sorted(
+        [str(episode.resolve()), str(song.resolve())], key=str.casefold
+    )
+
+
+def test_playback_positions_resume_and_clear_near_the_end(tmp_path: Path) -> None:
+    store = LibraryStore(tmp_path / "resume-library.sqlite3")
+    media = str((tmp_path / "movie.mp4").resolve())
+    store.save_playback_position(media, 60_000, 600_000)
+    assert store.playback_position(media) == (60_000, 600_000)
+
+    store.save_playback_position(media, 596_000, 600_000)
+    assert store.playback_position(media) is None
+    store.close()
