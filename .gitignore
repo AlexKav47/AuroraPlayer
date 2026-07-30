@@ -1,0 +1,9 @@
+.venv/
+build/
+dist/
+release/
+*.spec
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.sqlite3

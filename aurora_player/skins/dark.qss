@@ -1,0 +1,47 @@
+QMainWindow, QDialog {
+    background: #11151c;
+    color: #edf2f7;
+}
+QMenuBar, QMenu, QToolBar, QStatusBar, QDockWidget, QTabWidget::pane {
+    background: #161c25;
+    color: #edf2f7;
+    border-color: #2a3442;
+}
+QMenu::item:selected, QListWidget::item:selected, QTreeWidget::item:selected {
+    background: #2869d8;
+}
+QPushButton, QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {
+    color: #edf2f7;
+    background: #202936;
+    border: 1px solid #344155;
+    border-radius: 5px;
+    padding: 5px;
+}
+QPushButton:hover {
+    background: #2a3748;
+}
+QPushButton:pressed {
+    background: #2869d8;
+}
+QListWidget, QTreeWidget, QTableWidget {
+    color: #e6edf7;
+    background: #11151c;
+    border: 1px solid #2a3442;
+    alternate-background-color: #151b24;
+}
+QSlider::groove:horizontal {
+    height: 5px;
+    background: #344155;
+    border-radius: 2px;
+}
+QSlider::handle:horizontal {
+    width: 14px;
+    margin: -5px 0;
+    background: #4f91ff;
+    border-radius: 7px;
+}
+QToolTip {
+    color: #edf2f7;
+    background: #202936;
+    border: 1px solid #4f91ff;
+}

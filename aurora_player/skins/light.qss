@@ -1,0 +1,36 @@
+QMainWindow, QDialog {
+    background: #f5f7fa;
+    color: #172033;
+}
+QMenuBar, QMenu, QToolBar, QStatusBar, QDockWidget, QTabWidget::pane {
+    background: #ffffff;
+    color: #172033;
+    border-color: #d7deea;
+}
+QPushButton, QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {
+    color: #172033;
+    background: #ffffff;
+    border: 1px solid #c7d0df;
+    border-radius: 5px;
+    padding: 5px;
+}
+QPushButton:hover {
+    background: #edf3ff;
+}
+QListWidget, QTreeWidget, QTableWidget {
+    color: #172033;
+    background: #ffffff;
+    border: 1px solid #d7deea;
+    alternate-background-color: #f7f9fc;
+}
+QSlider::groove:horizontal {
+    height: 5px;
+    background: #c7d0df;
+    border-radius: 2px;
+}
+QSlider::handle:horizontal {
+    width: 14px;
+    margin: -5px 0;
+    background: #2869d8;
+    border-radius: 7px;
+}

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aurora-player"
+version = "1.0.0"
+description = "A cross-platform Qt/libVLC media player"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "PySide6>=6.8",
+  "python-vlc>=3.0.21203",
+]
+
+[project.scripts]
+aurora-player = "aurora_player.app:main"
+
+[tool.setuptools.packages.find]
+include = ["aurora_player*"]
+
+[tool.setuptools.package-data]
+aurora_player = ["skins/*.qss", "assets/*.png", "assets/*.ico"]

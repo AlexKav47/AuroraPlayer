@@ -1,0 +1,205 @@
+QWidget {
+    color: @TEXT@;
+    font-size: 10pt;
+}
+
+QMainWindow, QDialog {
+    background: @WINDOW@;
+}
+
+QMenuBar {
+    background: @PANEL@;
+    border-bottom: 1px solid @BORDER@;
+    padding: 2px 6px;
+}
+
+QMenuBar::item {
+    background: transparent;
+    border-radius: 5px;
+    padding: 5px 9px;
+}
+
+QMenuBar::item:selected, QMenuBar::item:pressed {
+    background: @CONTROL_HOVER@;
+}
+
+QMenu {
+    background: @PANEL@;
+    border: 1px solid @BORDER@;
+    border-radius: 7px;
+    padding: 5px;
+}
+
+QMenu::item {
+    border-radius: 5px;
+    padding: 7px 30px 7px 10px;
+}
+
+QMenu::item:selected {
+    color: @SELECTION_TEXT@;
+    background: @ACCENT@;
+}
+
+QMenu::separator {
+    height: 1px;
+    background: @BORDER@;
+    margin: 5px 8px;
+}
+
+QDockWidget {
+    background: @PANEL@;
+    border: 0;
+}
+
+QDockWidget::title {
+    background: @PANEL_ALT@;
+    border-bottom: 1px solid @BORDER@;
+    padding: 7px 9px;
+    text-align: left;
+}
+
+QTabWidget::pane {
+    background: @PANEL@;
+    border: 0;
+    border-top: 1px solid @BORDER@;
+}
+
+QTabBar::tab {
+    color: @MUTED@;
+    background: @PANEL@;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    padding: 8px 13px;
+}
+
+QTabBar::tab:hover {
+    color: @TEXT@;
+    background: @PANEL_ALT@;
+}
+
+QTabBar::tab:selected {
+    color: @TEXT@;
+    border-bottom: 2px solid @ACCENT@;
+}
+
+QPushButton, QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {
+    color: @TEXT@;
+    background: @CONTROL@;
+    border: 1px solid @BORDER@;
+    border-radius: 7px;
+    padding: 5px 8px;
+    selection-color: @SELECTION_TEXT@;
+    selection-background-color: @ACCENT@;
+}
+
+QPushButton:hover, QComboBox:hover, QSpinBox:hover, QDoubleSpinBox:hover,
+QLineEdit:hover {
+    background: @CONTROL_HOVER@;
+    border-color: @ACCENT@;
+}
+
+QPushButton:pressed {
+    color: @SELECTION_TEXT@;
+    background: @ACCENT@;
+}
+
+QPushButton:disabled, QComboBox:disabled, QLineEdit:disabled {
+    color: @MUTED@;
+    background: @PANEL_ALT@;
+}
+
+QComboBox::drop-down {
+    width: 22px;
+    border: 0;
+}
+
+QListWidget, QTreeWidget, QTableWidget {
+    color: @TEXT@;
+    background: @PANEL@;
+    alternate-background-color: @PANEL_ALT@;
+    border: 0;
+    outline: 0;
+    padding: 3px;
+}
+
+QListWidget::item, QTreeWidget::item {
+    border-radius: 5px;
+    padding: 5px;
+}
+
+QListWidget::item:hover, QTreeWidget::item:hover {
+    background: @CONTROL_HOVER@;
+}
+
+QListWidget::item:selected, QTreeWidget::item:selected {
+    color: @SELECTION_TEXT@;
+    background: @ACCENT@;
+}
+
+QHeaderView::section {
+    color: @MUTED@;
+    background: @PANEL_ALT@;
+    border: 0;
+    border-bottom: 1px solid @BORDER@;
+    padding: 6px;
+}
+
+QSlider::groove:horizontal {
+    height: 6px;
+    background: @PANEL_ALT@;
+    border: 1px solid @BORDER@;
+    border-radius: 3px;
+}
+
+QSlider::sub-page:horizontal {
+    background: @ACCENT@;
+    border-radius: 3px;
+}
+
+QSlider::handle:horizontal {
+    width: 16px;
+    margin: -6px 0;
+    background: @TEXT@;
+    border: 2px solid @ACCENT@;
+    border-radius: 8px;
+}
+
+QSlider::handle:horizontal:hover {
+    background: @ACCENT_HOVER@;
+}
+
+QScrollBar:vertical {
+    width: 10px;
+    background: transparent;
+    margin: 2px;
+}
+
+QScrollBar::handle:vertical {
+    min-height: 28px;
+    background: @BORDER@;
+    border-radius: 4px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: @ACCENT@;
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    height: 0;
+    background: transparent;
+}
+
+QStatusBar {
+    color: @MUTED@;
+    background: @PANEL@;
+    border-top: 1px solid @BORDER@;
+}
+
+QToolTip {
+    color: @TEXT@;
+    background: @PANEL_ALT@;
+    border: 1px solid @ACCENT@;
+    border-radius: 5px;
+    padding: 5px;
+}
