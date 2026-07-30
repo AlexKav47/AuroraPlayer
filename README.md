@@ -69,6 +69,7 @@ Available panes are filled first, and additional items remain in the playlist.
 - Uses automatic full, side-by-side, stacked, and quarter-grid layouts.
 - Supports click-to-select panes with a subtle active-pane highlight.
 - Provides independent play/pause and close controls for every pane.
+- Safely closes panes while their media is still playing.
 - Opens dropped files in the pane under the pointer.
 - Recursively finds supported media inside dropped folders.
 - Offers a single command to play or pause every open pane.
@@ -122,7 +123,7 @@ Available panes are filled first, and additional items remain in the playlist.
 
 ### Windows installer — recommended
 
-Download `AuroraPlayer-v1.1.0-Setup.exe` from the
+Download `AuroraPlayer-v1.1.1-Setup.exe` from the
 [latest release](https://github.com/AlexKav47/AuroraPlayer/releases/latest),
 then run it.
 
@@ -141,7 +142,7 @@ from this repository, choose **More info → Run anyway** to continue.
 
 ### Windows portable
 
-Download `AuroraPlayer-v1.1.0-Portable.zip`, extract the entire archive, and
+Download `AuroraPlayer-v1.1.1-Portable.zip`, extract the entire archive, and
 run:
 
 ```text
@@ -154,12 +155,12 @@ retained between launches without modifying the extracted runtime.
 
 ### Verify a download
 
-Each release includes `SHA256-v1.1.0.txt`. Compare its values with the
+Each release includes `SHA256-v1.1.1.txt`. Compare its values with the
 downloaded files using PowerShell:
 
 ```powershell
-Get-FileHash .\AuroraPlayer-v1.1.0-Setup.exe -Algorithm SHA256
-Get-FileHash .\AuroraPlayer-v1.1.0-Portable.zip -Algorithm SHA256
+Get-FileHash .\AuroraPlayer-v1.1.1-Setup.exe -Algorithm SHA256
+Get-FileHash .\AuroraPlayer-v1.1.1-Portable.zip -Algorithm SHA256
 ```
 
 ### Linux

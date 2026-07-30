@@ -134,7 +134,9 @@ class AuroraApplication:
         self.network = QNetworkAccessManager(qt_app)
         self._update_reply: QNetworkReply | None = None
 
-    def start(self, media_locations: list[str]) -> None:
+    def start(
+        self, media_locations: list[str], check_updates: bool = True
+    ) -> None:
         selected_skin = str(self.settings.value("appearance/skin", "dark"))
         if selected_skin == "custom":
             custom_path = str(self.settings.value("appearance/custom_skin", ""))
@@ -146,7 +148,8 @@ class AuroraApplication:
             self.apply_skin(selected_skin)
         self.load_extensions()
         self.open_locations(media_locations)
-        QTimer.singleShot(2500, self._automatic_update_check)
+        if check_updates:
+            QTimer.singleShot(2500, self._automatic_update_check)
 
     def open_locations(self, media_locations: list[str]) -> None:
         window = self.new_window()
@@ -180,7 +183,9 @@ class AuroraApplication:
             self.windows.remove(window)
         if not self.windows:
             self.library.close()
-            self.qt_app.quit()
+            self.qt_app.exit(
+                int(getattr(self.qt_app, "_aurora_exit_code", 0))
+            )
 
     def apply_skin(self, name: str) -> None:
         palette = BUILTIN_THEMES.get(name)
@@ -364,6 +369,9 @@ def parse_args(arguments: list[str]) -> argparse.Namespace:
         help="Media file paths or URLs; up to four open in one window",
     )
     parser.add_argument("--self-test", metavar="MEDIA", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--pane-close-test", metavar="MEDIA", help=argparse.SUPPRESS
+    )
     return parser.parse_args(arguments)
 
 
@@ -383,7 +391,7 @@ def main(arguments: list[str] | None = None) -> int:
         else str(Path(value).expanduser().resolve())
         for value in namespace.media
     ]
-    if not namespace.self_test:
+    if not namespace.self_test and not namespace.pane_close_test:
         instance_name = "AuroraPlayer-SingleWindow-v1"
         client = QLocalSocket()
         client.connectToServer(instance_name)
@@ -395,8 +403,10 @@ def main(arguments: list[str] | None = None) -> int:
             return 0
 
     controller = AuroraApplication(qt_app)
-    if namespace.self_test:
-        test_media = str(Path(namespace.self_test).expanduser().resolve())
+    if namespace.self_test or namespace.pane_close_test:
+        pane_close_test = bool(namespace.pane_close_test)
+        test_argument = namespace.pane_close_test or namespace.self_test
+        test_media = str(Path(test_argument).expanduser().resolve())
         test_root = Path(
             os.environ.get(
                 "AURORA_DATA_DIR",
@@ -406,9 +416,13 @@ def main(arguments: list[str] | None = None) -> int:
             )
         )
         test_root.mkdir(parents=True, exist_ok=True)
-        result_path = test_root / "self-test-result.json"
+        result_path = test_root / (
+            "pane-close-test-result.json"
+            if pane_close_test
+            else "self-test-result.json"
+        )
         qt_app.setQuitOnLastWindowClosed(False)
-        controller.start([test_media] * 4)
+        controller.start([test_media] * 4, check_updates=False)
 
         def finish_self_test() -> None:
             exit_code = 1
@@ -422,13 +436,21 @@ def main(arguments: list[str] | None = None) -> int:
                 result["times_ms"] = [
                     pane.player.get_time() for pane in window.panes
                 ]
+                expected_panes = 2 if pane_close_test else 4
+                result["completed_pane_cleanups"] = (
+                    window._completed_pane_cleanups
+                )
                 passed = (
-                    len(window.panes) == 4
+                    len(window.panes) == expected_panes
                     and all(pane.path == test_media for pane in window.panes)
                     and all(
                         pane.player.get_length() > 0
                         and pane.player.get_time() >= 0
                         for pane in window.panes
+                    )
+                    and (
+                        not pane_close_test
+                        or window._completed_pane_cleanups >= 2
                     )
                 )
                 result["passed"] = passed
@@ -438,11 +460,21 @@ def main(arguments: list[str] | None = None) -> int:
                 result["error"] = traceback.format_exc()
             finally:
                 result_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
+                qt_app._aurora_exit_code = exit_code
                 for open_window in list(controller.windows):
                     open_window.close()
-                qt_app.exit(exit_code)
 
-        QTimer.singleShot(1500, finish_self_test)
+        if pane_close_test:
+            def close_playing_pane() -> None:
+                window = controller.windows[0]
+                if len(window.panes) > 2:
+                    window.close_pane(window.panes[-1])
+
+            QTimer.singleShot(900, close_playing_pane)
+            QTimer.singleShot(1200, close_playing_pane)
+            QTimer.singleShot(2600, finish_self_test)
+        else:
+            QTimer.singleShot(1500, finish_self_test)
         qt_app._aurora_controller = controller
         return qt_app.exec()
 
