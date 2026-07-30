@@ -1,162 +1,280 @@
 # Aurora Player
 
-<img src="aurora_player/assets/logo.png" alt="Aurora Player logo" width="180">
+<p align="center">
+  <img src="aurora_player/assets/logo.png" alt="Aurora Player logo" width="180">
+</p>
 
-Aurora Player is a Windows and Linux desktop media player built with Qt and an
-embedded libVLC media engine. One window can hold up to four independent video
-panes in an adaptive layout: one full-area video, two side-by-side videos,
-three stacked rows, or four quarter-size panes.
+<p align="center">
+  A modern, all-in-one media player for Windows and Linux.<br>
+  Play up to four videos in one adaptive window—without installing VLC or Python.
+</p>
 
-The Windows release is a fast portable folder. Python, Qt, the media engine,
-codecs, filters, disc modules, and conversion tools are bundled beside the
-executable. The target computer does not need VLC or Python installed.
+<p align="center">
+  <a href="https://github.com/AlexKav47/AuroraPlayer/releases/latest"><strong>Download the latest release</strong></a>
+</p>
 
-## Run it
+Aurora Player combines broad format support, advanced playback tools, media
+management, conversion, customization, and a distinctive multi-video workspace
+in one desktop application. The Windows release includes its media engine and
+runtime, so it is ready to use immediately after installation.
 
-### Windows
+## Highlights
 
-For a normal installation, double-click:
+- Play up to four independent videos in one window.
+- Open common video and audio formats through the bundled libVLC engine.
+- Drag files or entire folders directly onto a video pane.
+- Manage playlists and a searchable media library.
+- Control subtitles, tracks, playback speed, synchronization, and effects.
+- Resume unfinished local media automatically.
+- Customize every major keyboard shortcut and choose from six themes.
+- Check GitHub Releases automatically for new versions.
+- Install normally or use the fully portable Windows package.
+
+## Adaptive multi-video layout
+
+Aurora Player automatically rearranges the workspace as videos are added:
+
+| Open videos | Layout |
+|---:|---|
+| 1 | One video fills the available viewing area |
+| 2 | Two videos appear side by side |
+| 3 | Three videos are stacked in full-width rows |
+| 4 | Four videos appear in a 2×2 grid |
+
+Click any video to make it active. Playback controls, track selection, effects,
+seeking, and volume changes apply to the active pane. Each pane also has its own
+play/pause and close controls, while **Play/pause all panes** controls the whole
+workspace at once.
+
+New files opened from Explorer are sent to the existing Aurora Player window.
+Available panes are filled first, and additional items remain in the playlist.
+
+## Features
+
+### Media playback
+
+- Plays MP4, MKV, AVI, MOV, WebM, WMV, MPEG, MP3, FLAC, AAC, WAV, OGG, Opus,
+  and many other formats supported by the bundled media engine.
+- Opens local files, folders, playlists, command-line paths, and network URLs.
+- Plays DVDs, Blu-rays, audio CDs, and VCDs through **File → Open disc**.
+- Supports correctly tagged 360-degree video.
+- Changes playback speed from 0.25× to 4×.
+- Provides frame-by-frame playback and A–B looping.
+- Remembers unfinished local media and resumes from the saved position.
+- Seeks directly when the timeline is clicked and previews exact time on hover.
+
+### Multi-video workspace
+
+- Plays up to four videos simultaneously in one application window.
+- Uses automatic full, side-by-side, stacked, and quarter-grid layouts.
+- Supports click-to-select panes with a subtle active-pane highlight.
+- Provides independent play/pause and close controls for every pane.
+- Opens dropped files in the pane under the pointer.
+- Recursively finds supported media inside dropped folders.
+- Offers a single command to play or pause every open pane.
+
+### Subtitles and tracks
+
+- Selects between embedded audio, video, and subtitle tracks.
+- Loads external SRT, ASS, SSA, VTT, SUB, and IDX subtitle files.
+- Adjusts subtitle delay and audio delay in milliseconds.
+- Customizes subtitle size, position, margin, and bold styling.
+- Supports closed captions exposed by the media engine.
+
+### Audio and video controls
+
+- Includes equalizer presets, compressor support, and spatial audio effects.
+- Adjusts brightness, contrast, saturation, gamma, and hue.
+- Applies sharpening and other libVLC-powered filters.
+- Changes crop, zoom, scale, and aspect ratio.
+- Synchronizes audio, video, and subtitles.
+- Controls volume independently for the selected pane.
+- Supports mouse gestures for seeking and volume.
+
+### Playlists and media library
+
+- Creates editable playlists in the sidebar.
+- Imports and exports M3U and M3U8 playlists.
+- Scans folders recursively into a persistent SQLite media library.
+- Searches and categorizes library content.
+- Removes files and folders from the library without deleting the originals.
+- Keeps additional media queued when all four panes are occupied.
+
+### Conversion and discs
+
+- Converts media to MP4, WebM, MP3, or FLAC using built-in presets.
+- Opens DVD, Blu-ray, audio CD, and VCD sources.
+- Includes the VLC conversion executable and required modules in Windows
+  releases.
+
+### Personalization and convenience
+
+- Includes Graphite, Pearl, Midnight, Forest, Rose, and Sunset themes.
+- Imports custom Qt stylesheet (`.qss`) skins.
+- Allows keyboard shortcuts to be changed, cleared, or restored to defaults.
+- Hides or restores the playlist and library sidebar.
+- Enters fullscreen by shortcut or by double-clicking a video.
+- Always provides `Esc` as a fullscreen exit action by default.
+- Supports trusted Python extensions through a documented entry point.
+- Checks GitHub Releases for updates at most once every 24 hours.
+
+## Download and install
+
+### Windows installer — recommended
+
+Download `AuroraPlayer-v1.1.0-Setup.exe` from the
+[latest release](https://github.com/AlexKav47/AuroraPlayer/releases/latest),
+then run it.
+
+The installer:
+
+- installs Aurora Player under `C:\Program Files\Aurora Player`;
+- creates a Start Menu shortcut;
+- registers supported media formats with Windows Default Apps;
+- includes the complete Python, Qt, and libVLC runtime;
+- adds Aurora Player to **Settings → Apps → Installed apps**; and
+- provides a normal uninstaller.
+
+The application is not currently code-signed, so Windows may show an
+**Unknown publisher** or SmartScreen message. If you downloaded the installer
+from this repository, choose **More info → Run anyway** to continue.
+
+### Windows portable
+
+Download `AuroraPlayer-v1.1.0-Portable.zip`, extract the entire archive, and
+run:
 
 ```text
-release\AuroraPlayer-v1.1.0-Setup.exe
+AuroraPlayer\AuroraPlayer.exe
 ```
 
-The setup installs Aurora Player under Program Files, creates a Start Menu
-entry, registers supported media formats with Windows Default Apps, and adds an
-uninstaller under **Settings → Apps → Installed apps**. Windows requires the
-user to confirm default-app changes, so setup offers to open the Default Apps
-page when it finishes.
+Keep `AuroraPlayer.exe` beside its `runtime` folder. Portable settings are
+stored in the current Windows user's application-data area, so preferences are
+retained between launches without modifying the extracted runtime.
 
-During uninstall, Aurora asks whether to remove its settings, library database,
-custom themes, and extensions. Original video and audio files are never
-deleted.
+### Verify a download
 
-For portable use instead, extract `release\AuroraPlayer-v1.1.0-Portable.zip` once,
-then double-click:
+Each release includes `SHA256-v1.1.0.txt`. Compare its values with the
+downloaded files using PowerShell:
 
-```text
-release\AuroraPlayer\AuroraPlayer.exe
+```powershell
+Get-FileHash .\AuroraPlayer-v1.1.0-Setup.exe -Algorithm SHA256
+Get-FileHash .\AuroraPlayer-v1.1.0-Portable.zip -Algorithm SHA256
 ```
-
-There is no installation or first-run setup. The executable can be copied to
-another Windows 10/11 x64 computer together with its `runtime` folder and
-launched directly. Keeping the runtime unpacked avoids the long extraction delay
-that affected the earlier single-file build.
-
-The `run.ps1` script is only for source-code development.
 
 ### Linux
 
-Linux binaries must be built on Linux because native binaries cannot be
-cross-compiled by the Windows packaging tool. For source development, install
-VLC/libVLC and Python's venv package, then run:
+Linux binaries must be built on Linux because the application uses native Qt
+and libVLC components. Install Python, VLC/libVLC, and Python's venv package,
+then run:
 
 ```sh
 chmod +x run.sh
 ./run.sh
 ```
 
-Package names differ by distribution. On Debian/Ubuntu the required native
-packages are normally `vlc`, `libvlc5`, and `python3-venv`.
+On Debian or Ubuntu, the native packages are commonly named `vlc`, `libvlc5`,
+and `python3-venv`. Package names vary by distribution.
 
-## Current feature coverage
+## Quick start
 
-| Requested capability | Current implementation |
+1. Launch Aurora Player.
+2. Open media with **File → Open file(s)**, press `Ctrl+O`, or drag media into
+   the viewing area.
+3. Add more videos by opening or dropping additional files.
+4. Click a pane to select it.
+5. Use the bottom controls for seeking, playback speed, volume, and navigation.
+6. Open the sidebar to manage the playlist or media library.
+
+Dropping a folder scans it recursively. The first supported item opens in the
+target pane, other available panes are filled, and remaining items are added to
+the playlist.
+
+## Keyboard and mouse controls
+
+| Input | Default action |
 |---|---|
-| MP4, MKV, AVI, MOV, MP3, FLAC, AAC and other formats | Decoded by the media engine embedded in the executable |
-| DVD, Blu-ray, audio CD and VCD | **File → Open disc** with disc type and device selection |
-| Open files | Dialog, pane-targeted file/folder drag-and-drop, recursive folder opening, command line, and network URL |
-| Playlists | Editable sidebar, M3U/M3U8 import/export, previous/next controls |
-| Media library | Persistent SQLite library, recursive folder scan, search, categorization, and safe file/folder removal |
-| Subtitles and closed captions | Embedded subtitle-track menu plus external SRT/ASS/SSA/VTT/SUB loading |
-| Subtitle timing and appearance | Live delay plus persistent size, position, margin, and bold settings |
-| Multiple audio/video tracks | Dynamic Audio, Video, and Subtitle track menus |
-| Playback speed | 0.25× through 4× |
-| Frame-by-frame and A–B loop | `E`/Frame button and `[`, `]`, `\` loop controls |
-| Equalizer, compressor, spatial effects | libVLC equalizer presets; compressor/spatializer reload filters |
-| Video filters and colour | Live brightness, contrast, saturation, gamma, hue, and reload-based sharpen |
-| Crop, zoom and aspect ratio | Video menu controls |
-| Audio/video/subtitle synchronization | Millisecond audio and subtitle delays |
-| Convert/transcode | VLC-powered MP4, WebM, MP3 and FLAC presets |
-| 360° video | libVLC projection support for correctly tagged 360° files |
-| Shortcuts and mouse gestures | Fully customizable keyboard controls plus right-drag seek/volume |
-| Extensions | Trusted Python extensions with a documented `register(application)` entry point |
-| Custom skins | Six built-in colour themes plus user-imported Qt `.qss` stylesheets |
-| Windows and Linux | Native Qt window and platform-specific VLC video surface |
-| Multiple simultaneous videos | One window, up to four independent panes, adaptive layouts, click-to-select controls, and play/pause-all |
-| Resume playback | Automatically remembers local files and resumes unfinished media |
-| Updates | Daily background check plus a manual GitHub Releases check under Help |
-
-## Important disc notes
-
-- Commercial Blu-ray playback can require separately available AACS/BD+
-  components and lawful keys. The application does not
-  bypass copy protection.
-- DVD and Blu-ray support also depends on the optical drive and operating-system
-  permissions.
-- On Linux, the usual optical-drive path is `/dev/sr0`; on Windows it is a drive
-  letter such as `D:`.
-
-## Opening files in the same window
-
-Aurora Player uses a single-instance handoff. Once the executable is associated
-with video extensions, later Explorer or file-manager launches send their files
-to the existing window. Available panes are filled up to the four-video limit;
-additional files remain accessible in the playlist.
-
-To rebuild the executable on a development computer:
-
-```powershell
-.\build.ps1
-```
-
-The Windows executable appears at:
-
-```text
-release\AuroraPlayer\AuroraPlayer.exe
-```
-
-Then use **Settings → Apps → Default apps** to associate the formats you want
-with that executable. Target computers do not need VLC or Python.
-
-On Linux, run `./build.sh`, install the resulting application somewhere on
-`PATH`, and create a normal desktop entry with the media MIME types you want.
-
-## Controls
-
-| Input | Action |
-|---|---|
-| `Space` | Play/pause |
-| `Left` / `Right` | Seek 5 seconds |
-| `Shift+Left` / `Shift+Right` | Seek 30 seconds |
-| `Up` / `Down` | Volume |
+| `Space` | Play or pause the active pane |
+| `Ctrl+Space` | Play or pause all panes |
+| `Left` / `Right` | Seek backward or forward 5 seconds |
+| `Shift+Left` / `Shift+Right` | Seek backward or forward 30 seconds |
+| `Up` / `Down` | Raise or lower volume |
 | `M` | Mute |
-| `E` | Next frame |
-| `[` / `]` | Set A/B loop points |
-| `\` | Clear A/B loop |
-| `F11` or video double-click | Fullscreen |
-| Right-drag horizontally | Seek backward/forward |
-| Right-drag vertically | Volume down/up |
-| `Ctrl+N` | Select another video to add |
-| `Ctrl+Space` | Play/pause all panes |
+| `S` | Stop |
+| `E` | Advance one frame |
+| `[` / `]` | Set the A and B loop points |
+| `\` | Clear the A–B loop |
+| `F11` or video double-click | Enter or leave fullscreen |
+| `Esc` | Leave fullscreen |
+| `Ctrl+N` | Add another video |
+| `Ctrl+B` | Show or hide the sidebar |
+| `Ctrl+O` | Open files |
+| `Ctrl+Shift+O` | Open a folder |
+| Right-drag horizontally | Seek backward or forward |
+| Right-drag vertically | Lower or raise volume |
 | Click a pane | Make that pane active |
-| Per-pane play button | Pause or resume only that video |
-| `Ctrl+B` or Sidebar button | Show or hide the sidebar |
-| `Delete` in the library | Remove selected files/folders from the library without deleting them from disk |
-| Drop files or folders on a pane | Open the first item in that pane and fill other available panes |
+| Drop files or folders on a pane | Open media in that pane |
+| `Delete` in the library | Remove selected entries without deleting files |
 
-Keyboard shortcuts can be changed or disabled under
-**View → Customize keyboard shortcuts**. Use
-**Playback → Clear saved playback positions** to erase resume history.
+Change or disable shortcuts under
+**View → Customize keyboard shortcuts**. Choose **Restore defaults** in the
+shortcut editor to return to the original controls.
 
-Aurora Player checks the project’s GitHub Releases endpoint at most once per
-day. Automatic checks can be disabled under **Help**, and update-check failures
-remain silent unless a manual check was requested.
+## Automatic update checks
 
-## Extensions and skins
+Automatic checks are enabled by default and run at most once every 24 hours.
+Aurora Player reads the latest published release from this repository and
+notifies you when its version is newer than the installed version.
 
-User extensions live in Aurora Player's application-data `extensions` folder.
-An extension is a trusted Python file:
+- Toggle automatic checks under **Help → Check for updates automatically**.
+- Run a manual check with **Help → Check for updates**.
+- The application opens the GitHub release page for downloads.
+- Updates are never silently downloaded or installed.
+- Draft releases and tags without a published GitHub Release are not offered.
+
+## Default application settings
+
+The installer registers Aurora Player with Windows, but Windows requires the
+user to approve default-app changes:
+
+1. Open **Settings → Apps → Default apps**.
+2. Search for **Aurora Player**.
+3. Select the video and audio extensions you want Aurora Player to open.
+
+Opening an associated file while Aurora Player is already running sends it to
+the same window instead of starting a second instance.
+
+## Data and uninstalling
+
+The installed application stores its settings, resume history, media-library
+database, custom themes, and extensions in the user's application-data area.
+The portable build uses the same per-user storage by default.
+
+During uninstall, Aurora Player asks whether this application data should also
+be removed. Your original video and audio files are never deleted by the
+uninstaller. Removing an entry from the Aurora Player library also leaves the
+original file untouched.
+
+Use **Playback → Clear saved playback positions** at any time to erase resume
+history.
+
+## Disc playback notes
+
+- Commercial Blu-ray playback may require separately available AACS/BD+
+  components and lawful keys. Aurora Player does not bypass copy protection.
+- Disc support depends on the optical drive, operating-system permissions, and
+  available decoding components.
+- A Windows disc device is usually a drive letter such as `D:`.
+- A typical Linux optical-drive path is `/dev/sr0`.
+
+## Themes and extensions
+
+Choose a built-in theme under **View → Skin**, or import a custom Qt stylesheet
+(`.qss`).
+
+User extensions are trusted Python files placed in Aurora Player's
+application-data `extensions` folder. An extension exposes a `register`
+function:
 
 ```python
 def register(application):
@@ -165,35 +283,73 @@ def register(application):
     pass
 ```
 
-Extensions execute as normal Python code with the user's permissions. Do not
-install an extension unless you trust its source.
+Extensions run with the same permissions as the application. Only install
+extension files from sources you trust.
 
-Skins are Qt stylesheets (`.qss`) and can be loaded from **View → Skin**.
+## Build from source
 
-## Development
+### Windows
 
-Run the automated tests after installing the requirements:
+Install Python and VLC on the development computer, then run:
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install pytest
-.\.venv\Scripts\python.exe -m pytest
+.\build.ps1
+.\build-installer.ps1
 ```
 
-The code is intentionally split into:
+`build.ps1` creates the portable folder and ZIP. `build-installer.ps1` uses
+Inno Setup 7 to create the Windows installer. VLC and Python are needed only on
+the build computer; they are bundled for end users.
 
-- `app.py` — lifecycle, single-instance handoff, skins, and extension loading
-- `player.py` — playback UI, library/playlist views, controls, and VLC binding
-- `dialogs.py` — discs, synchronization, effects, subtitles, and conversion
-- `library.py` — persistent media library and M3U handling
-- `vlc_runtime.py` — Windows/Linux libVLC discovery
+### Linux
 
-## Production follow-ups
+Build on Linux with:
 
-Useful follow-up work for later releases:
+```sh
+chmod +x build.sh
+./build.sh
+```
 
-- code-signing the installer and application binaries;
-- thumbnail and metadata extraction in a background worker;
-- thumbnail previews while seeking;
-- GPU/backend diagnostics and crash reporting;
-- sandboxed or declarative extensions instead of unrestricted Python;
-- CI builds and playback tests on both Windows and Linux.
+## Testing
+
+After installing the project requirements and `pytest`, run:
+
+```powershell
+python -m pytest
+```
+
+The automated suite covers the media library, playlists, recursive media-path
+expansion, resume storage, portable settings, and release-version comparison.
+The packaged application also supports an internal four-pane playback smoke
+test used during release validation.
+
+## Project structure
+
+| Path | Purpose |
+|---|---|
+| `aurora_player/app.py` | Application lifecycle, single-instance handoff, themes, extensions, and update checks |
+| `aurora_player/player.py` | Playback window, panes, menus, controls, playlists, and media-engine binding |
+| `aurora_player/dialogs.py` | Disc, synchronization, effects, subtitle, conversion, and shortcut dialogs |
+| `aurora_player/library.py` | Persistent media library, resume positions, media discovery, and playlists |
+| `aurora_player/settings.py` | Installed and portable settings storage |
+| `aurora_player/updates.py` | GitHub release version comparison |
+| `aurora_player/vlc_runtime.py` | Bundled and system libVLC discovery |
+| `installer/AuroraPlayer.iss` | Windows installer and file-association configuration |
+
+## Technology
+
+Aurora Player is built with:
+
+- [Qt for Python (PySide6)](https://doc.qt.io/qtforpython-6/)
+- [libVLC](https://www.videolan.org/vlc/libvlc.html)
+- [python-vlc](https://pypi.org/project/python-vlc/)
+- [SQLite](https://www.sqlite.org/)
+- [Inno Setup](https://jrsoftware.org/isinfo.php) for Windows installation
+
+Third-party licensing information is provided in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+---
+
+Aurora Player is an independent project and is not affiliated with or endorsed
+by VideoLAN.
