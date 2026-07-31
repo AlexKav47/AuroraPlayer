@@ -124,7 +124,7 @@ Available panes are filled first, and additional items remain in the playlist.
 
 ### Windows installer — recommended
 
-Download `AuroraPlayer-v1.1.1-Setup.exe` from the
+Download `AuroraPlayer-v1.2.0-Setup.exe` from the
 [latest release](https://github.com/AlexKav47/AuroraPlayer/releases/latest),
 then run it.
 
@@ -143,7 +143,7 @@ from this repository, choose **More info → Run anyway** to continue.
 
 ### Windows portable
 
-Download `AuroraPlayer-v1.1.1-Portable.zip`, extract the entire archive, and
+Download `AuroraPlayer-v1.2.0-Portable.zip`, extract the entire archive, and
 run:
 
 ```text
@@ -156,12 +156,12 @@ retained between launches without modifying the extracted runtime.
 
 ### Verify a download
 
-Each release includes `SHA256-v1.1.1.txt`. Compare its values with the
+Each release includes `SHA256-v1.2.0.txt`. Compare its values with the
 downloaded files using PowerShell:
 
 ```powershell
-Get-FileHash .\AuroraPlayer-v1.1.1-Setup.exe -Algorithm SHA256
-Get-FileHash .\AuroraPlayer-v1.1.1-Portable.zip -Algorithm SHA256
+Get-FileHash .\AuroraPlayer-v1.2.0-Setup.exe -Algorithm SHA256
+Get-FileHash .\AuroraPlayer-v1.2.0-Portable.zip -Algorithm SHA256
 ```
 
 ### Linux
