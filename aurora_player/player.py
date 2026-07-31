@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import queue
+import random
 import sys
 import threading
 import ctypes
@@ -15,6 +16,7 @@ from PySide6.QtCore import (
     QEasingCurve,
     QEvent,
     QPropertyAnimation,
+    QSize,
     Qt,
     QTimer,
     Signal,
@@ -26,7 +28,10 @@ from PySide6.QtGui import (
     QCursor,
     QDragEnterEvent,
     QDropEvent,
+    QIcon,
+    QImage,
     QKeySequence,
+    QPixmap,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -72,6 +77,7 @@ from .settings import (
     playback_skip_seconds,
     set_playback_skip_seconds,
 )
+from .thumbnails import THUMBNAIL_SIZE, ThumbnailProvider, media_placeholder
 
 if TYPE_CHECKING:
     from .app import AuroraApplication
@@ -89,6 +95,8 @@ SHORTCUT_DEFINITIONS: dict[str, tuple[str, str]] = {
     "play_pause": ("Play or pause active pane", "Space"),
     "play_pause_all": ("Play or pause all panes", "Ctrl+Space"),
     "stop": ("Stop", "S"),
+    "shuffle_playlist": ("Shuffle playlist", "Ctrl+H"),
+    "shuffle_library": ("Shuffle media library", "Ctrl+Shift+H"),
     "next_frame": ("Next frame", "E"),
     "set_a": ("Set A loop point", "["),
     "set_b": ("Set B loop point", "]"),
@@ -410,6 +418,8 @@ class PlayerWindow(QMainWindow):
         self._dialogs: list[QWidget] = []
         self._cleanup_started = False
         self._cleanup_done = False
+        self.thumbnail_provider = ThumbnailProvider(self)
+        self.thumbnail_provider.ready.connect(self._apply_thumbnail)
         self.cleanup_finished.connect(self._complete_close)
         self.pane_cleanup_finished.connect(self._finalize_closed_pane)
 
@@ -660,6 +670,7 @@ class PlayerWindow(QMainWindow):
         )
         self.tabs = FullWidthTabWidget()
         self.playlist = QListWidget()
+        self.playlist.setIconSize(THUMBNAIL_SIZE)
         self.playlist.setDragDropMode(QListWidget.DragDropMode.InternalMove)
         self.playlist.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
@@ -669,7 +680,17 @@ class PlayerWindow(QMainWindow):
         self.playlist.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.playlist.customContextMenuRequested.connect(self._playlist_context_menu)
         self.playlist.itemDoubleClicked.connect(self._playlist_double_clicked)
-        self.tabs.addTab(self.playlist, "Playlist")
+        playlist_page = QWidget()
+        playlist_layout = QVBoxLayout(playlist_page)
+        playlist_layout.setContentsMargins(0, 0, 0, 0)
+        playlist_layout.addWidget(self.playlist, 1)
+        self.shuffle_playlist_button = QPushButton("Shuffle playlist")
+        self.shuffle_playlist_button.setToolTip(
+            "Randomize the current playlist without interrupting playback"
+        )
+        self.shuffle_playlist_button.clicked.connect(self.shuffle_playlist)
+        playlist_layout.addWidget(self.shuffle_playlist_button)
+        self.tabs.addTab(playlist_page, "Playlist")
 
         library_page = QWidget()
         library_layout = QVBoxLayout(library_page)
@@ -677,9 +698,10 @@ class PlayerWindow(QMainWindow):
         self.library_search.setPlaceholderText("Search library…")
         self.library_search.textChanged.connect(self.refresh_library)
         self.library_tree = QTreeWidget()
+        self.library_tree.setIconSize(THUMBNAIL_SIZE)
         self.library_tree.setHeaderLabels(["Title", "Type"])
         self.library_tree.setAlternatingRowColors(True)
-        self.library_tree.setUniformRowHeights(True)
+        self.library_tree.setUniformRowHeights(False)
         self.library_tree.setAllColumnsShowFocus(True)
         self.library_tree.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
@@ -715,9 +737,15 @@ class PlayerWindow(QMainWindow):
         remove_library.clicked.connect(self.remove_library_selection)
         refresh = QPushButton("Refresh")
         refresh.clicked.connect(self.refresh_library)
+        self.shuffle_library_button = QPushButton("Shuffle")
+        self.shuffle_library_button.setToolTip(
+            "Queue every library item in random order and start the first one"
+        )
+        self.shuffle_library_button.clicked.connect(self.shuffle_library)
         library_buttons.addWidget(add_folder, 1)
         library_buttons.addWidget(remove_library, 1)
         library_buttons.addWidget(refresh, 1)
+        library_buttons.addWidget(self.shuffle_library_button, 1)
         library_layout.addWidget(self.library_search)
         library_layout.addWidget(self.library_tree, 1)
         library_layout.addLayout(library_buttons)
@@ -1004,6 +1032,19 @@ class PlayerWindow(QMainWindow):
         )
         playback.addSeparator()
         self._action(
+            playback,
+            "Shuffle playlist",
+            self.shuffle_playlist,
+            shortcut_id="shuffle_playlist",
+        )
+        self._action(
+            playback,
+            "Shuffle library",
+            self.shuffle_library,
+            shortcut_id="shuffle_library",
+        )
+        playback.addSeparator()
+        self._action(
             playback, "Set A point", self.set_a_point, shortcut_id="set_a"
         )
         self._action(
@@ -1252,10 +1293,7 @@ class PlayerWindow(QMainWindow):
             path = str(Path(raw_path).expanduser().resolve())
             if not Path(path).is_file():
                 continue
-            item = QListWidgetItem(Path(path).name)
-            item.setToolTip(path)
-            item.setData(Qt.ItemDataRole.UserRole, path)
-            self.playlist.addItem(item)
+            self._append_playlist_item(path)
             valid.append(path)
         if valid:
             self.library.add_paths(valid)
@@ -1491,6 +1529,70 @@ class PlayerWindow(QMainWindow):
             for index in range(self.playlist.count())
         ]
 
+    def _append_playlist_item(self, path: str) -> QListWidgetItem:
+        item = QListWidgetItem(
+            QIcon(QPixmap.fromImage(media_placeholder(path))), Path(path).name
+        )
+        item.setSizeHint(QSize(0, THUMBNAIL_SIZE.height() + 8))
+        item.setToolTip(path)
+        item.setData(Qt.ItemDataRole.UserRole, path)
+        self.playlist.addItem(item)
+        self.thumbnail_provider.request(path)
+        return item
+
+    def _apply_thumbnail(self, path: str, image: QImage) -> None:
+        icon = QIcon(QPixmap.fromImage(image))
+        for index in range(self.playlist.count()):
+            item = self.playlist.item(index)
+            if str(item.data(Qt.ItemDataRole.UserRole)) == path:
+                item.setIcon(icon)
+        pending = [
+            self.library_tree.topLevelItem(index)
+            for index in range(self.library_tree.topLevelItemCount())
+        ]
+        while pending:
+            item = pending.pop()
+            if str(item.data(0, Qt.ItemDataRole.UserRole)) == path:
+                item.setIcon(0, icon)
+            pending.extend(item.child(index) for index in range(item.childCount()))
+
+    def shuffle_playlist(self) -> None:
+        if self.playlist.count() < 2:
+            self.statusBar().showMessage(
+                "Add at least two items to shuffle the playlist.", 3500
+            )
+            return
+        current = self.playlist.currentItem()
+        items = [self.playlist.takeItem(0) for _ in range(self.playlist.count())]
+        original_order = list(items)
+        random.shuffle(items)
+        if items == original_order:
+            items.append(items.pop(0))
+        for item in items:
+            self.playlist.addItem(item)
+        if current is not None:
+            self.playlist.setCurrentItem(current)
+        self.statusBar().showMessage(f"Shuffled {len(items)} playlist items.", 3500)
+
+    def shuffle_library(self) -> None:
+        paths = [
+            media.path
+            for media in self.library.items()
+            if Path(media.path).is_file()
+        ]
+        if not paths:
+            self.statusBar().showMessage("The media library is empty.", 3500)
+            return
+        random.shuffle(paths)
+        self.playlist.clear()
+        for path in paths:
+            self._append_playlist_item(path)
+        self.playlist.setCurrentRow(0)
+        self.open_media(paths[0])
+        self.statusBar().showMessage(
+            f"Shuffled {len(paths)} library items into the playlist.", 5000
+        )
+
     def _playlist_double_clicked(self, item: QListWidgetItem) -> None:
         self.open_in_available_pane(str(item.data(Qt.ItemDataRole.UserRole)))
 
@@ -1502,12 +1604,15 @@ class PlayerWindow(QMainWindow):
         play = menu.addAction("Play in active pane")
         new_pane = menu.addAction("Open in new pane")
         new_pane.setEnabled(len(self.panes) < 4)
+        shuffle = menu.addAction("Shuffle playlist")
         remove = menu.addAction("Remove from playlist")
         selected = menu.exec(self.playlist.mapToGlobal(point))
         if selected == play:
             self.open_media(str(item.data(Qt.ItemDataRole.UserRole)))
         elif selected == new_pane:
             self.add_pane(str(item.data(Qt.ItemDataRole.UserRole)))
+        elif selected == shuffle:
+            self.shuffle_playlist()
         elif selected == remove:
             self.playlist.takeItem(self.playlist.row(item))
 
@@ -1565,9 +1670,11 @@ class PlayerWindow(QMainWindow):
                 item.setData(0, kind_role, "media")
                 item.setToolTip(0, media.path)
                 item.setIcon(
-                    0, self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
+                    0, QIcon(QPixmap.fromImage(media_placeholder(media.path)))
                 )
+                item.setSizeHint(0, QSize(0, THUMBNAIL_SIZE.height() + 8))
                 folder_item.addChild(item)
+                self.thumbnail_provider.request(media.path)
             folder_item.setExpanded(True)
 
         for media in loose_items:
@@ -1576,9 +1683,12 @@ class PlayerWindow(QMainWindow):
             item.setData(0, kind_role, "media")
             item.setToolTip(0, media.path)
             item.setIcon(
-                0, self.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
+                0, QIcon(QPixmap.fromImage(media_placeholder(media.path)))
             )
+            item.setSizeHint(0, QSize(0, THUMBNAIL_SIZE.height() + 8))
             self.library_tree.addTopLevelItem(item)
+            self.thumbnail_provider.request(media.path)
+
     def _library_double_clicked(self, item: QTreeWidgetItem) -> None:
         kind_role = int(Qt.ItemDataRole.UserRole) + 1
         if item.data(0, kind_role) != "media":
@@ -1607,9 +1717,12 @@ class PlayerWindow(QMainWindow):
         else:
             label = "Remove file from library" if files == 1 else "Remove files from library"
         menu = QMenu(self)
+        shuffle_action = menu.addAction("Shuffle library")
         remove_action = menu.addAction(label)
         selected = menu.exec(self.library_tree.mapToGlobal(point))
-        if selected == remove_action:
+        if selected == shuffle_action:
+            self.shuffle_library()
+        elif selected == remove_action:
             self.remove_library_selection()
 
     def remove_library_selection(self) -> None:
@@ -2126,6 +2239,7 @@ class PlayerWindow(QMainWindow):
             event.ignore()
             return
         self._cleanup_started = True
+        self.thumbnail_provider.stop()
         for pane in self.panes:
             self._save_resume_position(pane, force=True)
             self._quiesce_pane(pane)

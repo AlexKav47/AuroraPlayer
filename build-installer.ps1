@@ -27,4 +27,4 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "Windows setup application built:"
-Write-Host "release\AuroraPlayer-v1.3.0-Setup.exe"
+Write-Host "release\AuroraPlayer-v1.4.0-Setup.exe"

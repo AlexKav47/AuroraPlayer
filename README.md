@@ -27,7 +27,7 @@ runtime, so it is ready to use immediately after installation.
 - Play up to four independent videos in one window.
 - Open common video and audio formats through the bundled libVLC engine.
 - Drag files or entire folders directly onto a video pane.
-- Manage playlists and a searchable media library.
+- Browse thumbnail-rich playlists and a searchable media library.
 - Control subtitles, tracks, playback speed, synchronization, and effects.
 - Resume unfinished local media automatically.
 - Customize every major keyboard shortcut and choose from nine themes.
@@ -99,10 +99,14 @@ Available panes are filled first, and additional items remain in the playlist.
 
 ### Playlists and media library
 
-- Creates editable playlists in the sidebar.
+- Shows cached video thumbnails in both playlist and library views without
+  delaying application startup.
+- Creates editable playlists in the sidebar and shuffles them without
+  interrupting the video already playing.
 - Imports and exports M3U and M3U8 playlists.
 - Scans folders recursively into a persistent SQLite media library.
-- Searches and categorizes library content.
+- Searches and categorizes library content, and can shuffle the full library
+  into a new playback queue.
 - Removes files and folders from the library without deleting the originals.
 - Keeps additional media queued when all four panes are occupied.
 
@@ -131,7 +135,7 @@ Available panes are filled first, and additional items remain in the playlist.
 
 ### Windows installer — recommended
 
-Download `AuroraPlayer-v1.3.0-Setup.exe` from the
+Download `AuroraPlayer-v1.4.0-Setup.exe` from the
 [latest release](https://github.com/AlexKav47/AuroraPlayer/releases/latest),
 then run it.
 
@@ -150,7 +154,7 @@ from this repository, choose **More info → Run anyway** to continue.
 
 ### Windows portable
 
-Download `AuroraPlayer-v1.3.0-Portable.zip`, extract the entire archive, and
+Download `AuroraPlayer-v1.4.0-Portable.zip`, extract the entire archive, and
 run:
 
 ```text
@@ -163,12 +167,12 @@ retained between launches without modifying the extracted runtime.
 
 ### Verify a download
 
-Each release includes `SHA256-v1.3.0.txt`. Compare its values with the
+Each release includes `SHA256-v1.4.0.txt`. Compare its values with the
 downloaded files using PowerShell:
 
 ```powershell
-Get-FileHash .\AuroraPlayer-v1.3.0-Setup.exe -Algorithm SHA256
-Get-FileHash .\AuroraPlayer-v1.3.0-Portable.zip -Algorithm SHA256
+Get-FileHash .\AuroraPlayer-v1.4.0-Setup.exe -Algorithm SHA256
+Get-FileHash .\AuroraPlayer-v1.4.0-Portable.zip -Algorithm SHA256
 ```
 
 ### Linux

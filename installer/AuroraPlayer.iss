@@ -1,5 +1,5 @@
 #define MyAppName "Aurora Player"
-#define MyAppVersion "1.3.0"
+#define MyAppVersion "1.4.0"
 #define MyAppPublisher "Aurora Player"
 #define MyAppExeName "AuroraPlayer.exe"
 #define MyAppId "{{8C9D7C2E-62D9-4F58-A247-568BBD25CF11}"
