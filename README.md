@@ -18,6 +18,10 @@ management, conversion, customization, and a distinctive multi-video workspace
 in one desktop application. The Windows release includes its media engine and
 runtime, so it is ready to use immediately after installation.
 
+<p align="center">
+<img width="2559" height="1439" alt="image" src="https://github.com/user-attachments/assets/37e320c6-0f56-4516-974b-4b30e5ad8169" />
+</p>
+
 ## Highlights
 
 - Play up to four independent videos in one window.
