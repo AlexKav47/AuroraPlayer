@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import hashlib
 import importlib.util
 import json
 import os
 import sys
+import tempfile
 import time
 import traceback
 from pathlib import Path
 
-from PySide6.QtCore import QStandardPaths, QTimer, QUrl
+from PySide6.QtCore import QStandardPaths, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtNetwork import (
     QLocalServer,
@@ -18,7 +21,7 @@ from PySide6.QtNetwork import (
     QNetworkReply,
     QNetworkRequest,
 )
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox, QProgressDialog
 
 from . import __version__
 from .library import LibraryStore
@@ -26,7 +29,9 @@ from .settings import application_settings
 from .updates import (
     GITHUB_LATEST_RELEASE_API,
     GITHUB_RELEASES_URL,
+    InstallerAsset,
     is_newer_version,
+    windows_installer_asset,
 )
 from .vlc_runtime import configure_vlc_runtime, find_vlc_executable
 
@@ -119,6 +124,48 @@ BUILTIN_THEMES = {
         "accent_hover": "#ffb477",
         "selection_text": "#2b1305",
     },
+    "pixie": {
+        "label": "Pixie",
+        "window": "#FBEFEF",
+        "panel": "#FFE2E2",
+        "panel_alt": "#F5CBCB",
+        "control": "#FFF7F7",
+        "control_hover": "#EEDBEA",
+        "text": "#392F40",
+        "muted": "#756779",
+        "border": "#D5BBCD",
+        "accent": "#C5B3D3",
+        "accent_hover": "#B29CC3",
+        "selection_text": "#2B2230",
+    },
+    "retro": {
+        "label": "Retro",
+        "window": "#000000",
+        "panel": "#233D4D",
+        "panel_alt": "#1A303D",
+        "control": "#304E60",
+        "control_hover": "#3C6073",
+        "text": "#EAECF0",
+        "muted": "#AAB8C0",
+        "border": "#486778",
+        "accent": "#FE7F2D",
+        "accent_hover": "#FF9A5C",
+        "selection_text": "#000000",
+    },
+    "space": {
+        "label": "Space",
+        "window": "#0B0909",
+        "panel": "#2E4540",
+        "panel_alt": "#243733",
+        "control": "#38564F",
+        "control_hover": "#408175",
+        "text": "#F0F1FF",
+        "muted": "#B5B9F0",
+        "border": "#4D6A64",
+        "accent": "#B5B9F0",
+        "accent_hover": "#D0D3FF",
+        "selection_text": "#0B0909",
+    },
 }
 
 
@@ -133,6 +180,9 @@ class AuroraApplication:
         self._loaded_extensions: list[object] = []
         self.network = QNetworkAccessManager(qt_app)
         self._update_reply: QNetworkReply | None = None
+        self._download_reply: QNetworkReply | None = None
+        self._update_progress: QProgressDialog | None = None
+        self._update_download_cancelled = False
 
     def start(
         self, media_locations: list[str], check_updates: bool = True
@@ -284,6 +334,7 @@ class AuroraApplication:
             payload = json.loads(bytes(reply.readAll()).decode("utf-8"))
             latest_version = str(payload["tag_name"])
             release_url = str(payload.get("html_url", GITHUB_RELEASES_URL))
+            installer_asset = windows_installer_asset(payload, latest_version)
         except (KeyError, TypeError, ValueError, UnicodeDecodeError):
             reply.deleteLater()
             if manual:
@@ -306,22 +357,212 @@ class AuroraApplication:
             message.setText(
                 f"Aurora Player {latest_version.lstrip('v')} is available."
             )
-            message.setInformativeText(
-                f"You currently have version {__version__}. "
-                "Open the GitHub release page to download it?"
-            )
-            message.setStandardButtons(
-                QMessageBox.StandardButton.Open
-                | QMessageBox.StandardButton.Cancel
-            )
-            message.setDefaultButton(QMessageBox.StandardButton.Open)
-            if message.exec() == QMessageBox.StandardButton.Open:
-                QDesktopServices.openUrl(QUrl(release_url))
+            if sys.platform == "win32" and installer_asset is not None:
+                message.setInformativeText(
+                    f"You currently have version {__version__}. "
+                    "Aurora Player can download and install the update for you."
+                )
+                install_button = message.addButton(
+                    "Download and install",
+                    QMessageBox.ButtonRole.AcceptRole,
+                )
+                message.addButton(QMessageBox.StandardButton.Cancel)
+                message.setDefaultButton(install_button)
+                message.exec()
+                if message.clickedButton() is install_button:
+                    self._download_and_install_update(
+                        latest_version, installer_asset, release_url
+                    )
+            else:
+                message.setInformativeText(
+                    f"You currently have version {__version__}. "
+                    "Open the GitHub release page to download it?"
+                )
+                message.setStandardButtons(
+                    QMessageBox.StandardButton.Open
+                    | QMessageBox.StandardButton.Cancel
+                )
+                message.setDefaultButton(QMessageBox.StandardButton.Open)
+                if message.exec() == QMessageBox.StandardButton.Open:
+                    QDesktopServices.openUrl(QUrl(release_url))
         elif manual:
             QMessageBox.information(
                 parent,
                 "Aurora Player is up to date",
                 f"Version {__version__} is the latest available release.",
+            )
+
+    def _download_and_install_update(
+        self,
+        version: str,
+        asset: InstallerAsset,
+        release_url: str,
+    ) -> None:
+        parent = self.windows[0] if self.windows else None
+        if self._download_reply is not None:
+            if parent is not None:
+                parent.statusBar().showMessage(
+                    "An update is already downloading.", 3000
+                )
+            return
+        request = QNetworkRequest(QUrl(asset.url))
+        request.setRawHeader(b"Accept", b"application/octet-stream")
+        request.setRawHeader(
+            b"User-Agent", f"AuroraPlayer/{__version__}".encode("ascii")
+        )
+        reply = self.network.get(request)
+        self._download_reply = reply
+        self._update_download_cancelled = False
+        progress = QProgressDialog(
+            f"Downloading Aurora Player {version.lstrip('v')}â€¦",
+            "Cancel",
+            0,
+            100,
+            parent,
+        )
+        progress.setWindowTitle("Aurora Player update")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        self._update_progress = progress
+        progress.canceled.connect(self._cancel_update_download)
+        reply.downloadProgress.connect(self._set_update_download_progress)
+        reply.finished.connect(
+            lambda current=reply, update_version=version,
+            update_asset=asset, fallback=release_url: (
+                self._finish_update_download(
+                    current, update_version, update_asset, fallback
+                )
+            )
+        )
+        QTimer.singleShot(
+            10 * 60 * 1000,
+            lambda current=reply: (
+                current.abort()
+                if self._download_reply is current and current.isRunning()
+                else None
+            ),
+        )
+
+    def _set_update_download_progress(
+        self, received: int, total: int
+    ) -> None:
+        progress = self._update_progress
+        if progress is None:
+            return
+        if total <= 0:
+            progress.setRange(0, 0)
+            return
+        progress.setRange(0, total)
+        progress.setValue(received)
+
+    def _cancel_update_download(self) -> None:
+        self._update_download_cancelled = True
+        if self._download_reply is not None:
+            self._download_reply.abort()
+
+    def _finish_update_download(
+        self,
+        reply: QNetworkReply,
+        version: str,
+        asset: InstallerAsset,
+        release_url: str,
+    ) -> None:
+        if self._download_reply is not reply:
+            reply.deleteLater()
+            return
+        self._download_reply = None
+        progress = self._update_progress
+        self._update_progress = None
+        if progress is not None:
+            progress.close()
+            progress.deleteLater()
+        parent = self.windows[0] if self.windows else None
+        if reply.error() != QNetworkReply.NetworkError.NoError:
+            error = reply.errorString()
+            reply.deleteLater()
+            if not self._update_download_cancelled:
+                QMessageBox.warning(
+                    parent,
+                    "Update download",
+                    "Aurora Player could not download the update.\n\n"
+                    f"{error}",
+                )
+            return
+        contents = bytes(reply.readAll())
+        reply.deleteLater()
+        actual_sha256 = hashlib.sha256(contents).hexdigest()
+        if asset.sha256 is not None and actual_sha256 != asset.sha256:
+            QMessageBox.critical(
+                parent,
+                "Update verification failed",
+                "The downloaded installer did not match GitHub's SHA-256 "
+                "digest and will not be opened.",
+            )
+            return
+        update_root = Path(tempfile.gettempdir()) / "AuroraPlayerUpdates"
+        try:
+            update_root.mkdir(parents=True, exist_ok=True)
+            installer_path = update_root / asset.name
+            partial_path = update_root / f"{asset.name}.download"
+            partial_path.write_bytes(contents)
+            os.replace(partial_path, installer_path)
+        except OSError as error:
+            QMessageBox.warning(
+                parent,
+                "Update download",
+                "Aurora Player could not save the update installer.\n\n"
+                f"{error}",
+            )
+            return
+        parameters = " ".join(
+            [
+                "/SILENT",
+                "/SUPPRESSMSGBOXES",
+                "/CLOSEAPPLICATIONS",
+                "/RESTARTAPPLICATIONS",
+            ]
+        )
+        try:
+            shell_execute = ctypes.windll.shell32.ShellExecuteW
+            shell_execute.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_wchar_p,
+                ctypes.c_wchar_p,
+                ctypes.c_wchar_p,
+                ctypes.c_wchar_p,
+                ctypes.c_int,
+            ]
+            shell_execute.restype = ctypes.c_void_p
+            result = shell_execute(
+                None,
+                "runas",
+                str(installer_path),
+                parameters,
+                str(installer_path.parent),
+                1,
+            )
+            started = int(result or 0) > 32
+        except (AttributeError, OSError, TypeError, ValueError):
+            started = False
+        if not started:
+            choice = QMessageBox.warning(
+                parent,
+                "Update installer",
+                "The update was downloaded but Windows could not start the "
+                "installer. Open the GitHub release page instead?",
+                QMessageBox.StandardButton.Open
+                | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Open,
+            )
+            if choice == QMessageBox.StandardButton.Open:
+                QDesktopServices.openUrl(QUrl(release_url))
+            return
+        if parent is not None:
+            parent.statusBar().showMessage(
+                f"Installing Aurora Player {version.lstrip('v')}â€¦"
             )
 
     def load_extensions(self) -> None:

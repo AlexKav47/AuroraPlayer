@@ -30,7 +30,7 @@ runtime, so it is ready to use immediately after installation.
 - Manage playlists and a searchable media library.
 - Control subtitles, tracks, playback speed, synchronization, and effects.
 - Resume unfinished local media automatically.
-- Customize every major keyboard shortcut and choose from six themes.
+- Customize every major keyboard shortcut and choose from nine themes.
 - Check GitHub Releases automatically for new versions.
 - Install normally or use the fully portable Windows package.
 
@@ -115,11 +115,14 @@ Available panes are filled first, and additional items remain in the playlist.
 
 ### Personalization and convenience
 
-- Includes Graphite, Pearl, Midnight, Forest, Rose, and Sunset themes.
+- Includes Graphite, Pearl, Midnight, Forest, Rose, Sunset, Pixie, Retro, and
+  Space themes.
 - Imports custom Qt stylesheet (`.qss`) skins.
 - Allows keyboard shortcuts to be changed, cleared, or restored to defaults.
 - Hides or restores the playlist and library sidebar.
 - Enters fullscreen by shortcut or by double-clicking a video.
+- Uses a video-only fullscreen view; mouse or keyboard activity slides the
+  playback controls back into view temporarily.
 - Always provides `Esc` as a fullscreen exit action by default.
 - Supports trusted Python extensions through a documented entry point.
 - Checks GitHub Releases for updates at most once every 24 hours.
@@ -128,7 +131,7 @@ Available panes are filled first, and additional items remain in the playlist.
 
 ### Windows installer — recommended
 
-Download `AuroraPlayer-v1.2.0-Setup.exe` from the
+Download `AuroraPlayer-v1.3.0-Setup.exe` from the
 [latest release](https://github.com/AlexKav47/AuroraPlayer/releases/latest),
 then run it.
 
@@ -147,7 +150,7 @@ from this repository, choose **More info → Run anyway** to continue.
 
 ### Windows portable
 
-Download `AuroraPlayer-v1.2.0-Portable.zip`, extract the entire archive, and
+Download `AuroraPlayer-v1.3.0-Portable.zip`, extract the entire archive, and
 run:
 
 ```text
@@ -160,12 +163,12 @@ retained between launches without modifying the extracted runtime.
 
 ### Verify a download
 
-Each release includes `SHA256-v1.2.0.txt`. Compare its values with the
+Each release includes `SHA256-v1.3.0.txt`. Compare its values with the
 downloaded files using PowerShell:
 
 ```powershell
-Get-FileHash .\AuroraPlayer-v1.2.0-Setup.exe -Algorithm SHA256
-Get-FileHash .\AuroraPlayer-v1.2.0-Portable.zip -Algorithm SHA256
+Get-FileHash .\AuroraPlayer-v1.3.0-Setup.exe -Algorithm SHA256
+Get-FileHash .\AuroraPlayer-v1.3.0-Portable.zip -Algorithm SHA256
 ```
 
 ### Linux
@@ -239,8 +242,11 @@ notifies you when its version is newer than the installed version.
 
 - Toggle automatic checks under **Help → Check for updates automatically**.
 - Run a manual check with **Help → Check for updates**.
-- The application opens the GitHub release page for downloads.
-- Updates are never silently downloaded or installed.
+- On Windows, accepting an update downloads the correctly versioned installer
+  from the official Aurora Player GitHub release and launches it automatically.
+- GitHub's SHA-256 asset digest is verified when the release provides one.
+- Aurora Player always asks before downloading or installing an update.
+- Other platforms open the GitHub release page for manual installation.
 - Draft releases and tags without a published GitHub Release are not offered.
 
 ## Default application settings

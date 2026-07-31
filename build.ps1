@@ -63,7 +63,7 @@ $pyinstallerArguments = @(
 & $buildPython -m PyInstaller @pyinstallerArguments
 
 $portableFolder = Join-Path $projectRoot "release\AuroraPlayer"
-$portableZip = Join-Path $projectRoot "release\AuroraPlayer-v1.2.0-Portable.zip"
+$portableZip = Join-Path $projectRoot "release\AuroraPlayer-v1.3.0-Portable.zip"
 $runtimeFolder = Join-Path $portableFolder "runtime"
 
 # Aurora uses its own Qt interface and English labels, so GUI front ends,
@@ -102,7 +102,7 @@ Compress-Archive -Path (Join-Path $portableFolder "*") -DestinationPath $portabl
 Write-Host ""
 Write-Host "Fast portable application built:"
 Write-Host "release\AuroraPlayer\AuroraPlayer.exe"
-Write-Host "release\AuroraPlayer-v1.2.0-Portable.zip"
+Write-Host "release\AuroraPlayer-v1.3.0-Portable.zip"
 Write-Host ""
 Write-Host "Extract the ZIP once, then double-click AuroraPlayer.exe."
 Write-Host "The target computer does not need Python or VLC."

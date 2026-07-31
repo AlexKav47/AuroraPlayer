@@ -11,7 +11,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Iterable
 
 import vlc
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QPropertyAnimation,
+    Qt,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
@@ -301,6 +308,7 @@ class FullWidthTabWidget(QTabWidget):
 @dataclass(slots=True)
 class MediaPane:
     container: QWidget
+    header: QWidget
     surface: VideoSurface
     title_label: QLabel
     play_button: QPushButton
@@ -393,6 +401,9 @@ class PlayerWindow(QMainWindow):
         self._equalizer = None
         self._sharpen = 0.0
         self._fullscreen = False
+        self._fullscreen_controls_visible = False
+        self._fullscreen_cursor_position = QCursor.pos()
+        self._controls_animation: QPropertyAnimation | None = None
         self._window_was_maximized = True
         self._sidebar_was_visible = True
         self._pane_mouse_was_down = False
@@ -421,6 +432,21 @@ class PlayerWindow(QMainWindow):
         self.pane_selection_timer.setInterval(25)
         self.pane_selection_timer.timeout.connect(self._poll_pane_selection)
         self.pane_selection_timer.start()
+
+        self.fullscreen_activity_timer = QTimer(self)
+        self.fullscreen_activity_timer.setInterval(100)
+        self.fullscreen_activity_timer.timeout.connect(
+            self._poll_fullscreen_activity
+        )
+        self.fullscreen_hide_timer = QTimer(self)
+        self.fullscreen_hide_timer.setSingleShot(True)
+        self.fullscreen_hide_timer.setInterval(3000)
+        self.fullscreen_hide_timer.timeout.connect(
+            self._hide_fullscreen_controls
+        )
+        application = QApplication.instance()
+        if application is not None:
+            application.installEventFilter(self)
 
         if initial_media:
             QTimer.singleShot(0, lambda: self.open_media(initial_media))
@@ -492,6 +518,7 @@ class PlayerWindow(QMainWindow):
         pane_layout.addWidget(surface, 1)
         pane = MediaPane(
             container=container,
+            header=pane_header,
             surface=surface,
             title_label=title_label,
             play_button=play_button,
@@ -533,8 +560,8 @@ class PlayerWindow(QMainWindow):
         self._relayout_panes()
         self.set_active_pane(self.active_pane)
 
-        controls = QWidget()
-        controls_layout = QVBoxLayout(controls)
+        self.controls = QWidget()
+        controls_layout = QVBoxLayout(self.controls)
         controls_layout.setContentsMargins(12, 7, 12, 9)
         timeline = QHBoxLayout()
         self.time_label = QLabel("0:00")
@@ -622,7 +649,7 @@ class PlayerWindow(QMainWindow):
         buttons.addSpacing(8)
         buttons.addWidget(self.sidebar_button)
         controls_layout.addLayout(buttons)
-        central_layout.addWidget(controls)
+        central_layout.addWidget(self.controls)
         self.setCentralWidget(central)
 
         self.sidebar = QDockWidget("Media", self)
@@ -737,15 +764,24 @@ class PlayerWindow(QMainWindow):
         self.active_pane = pane
         visible_count = sum(candidate.path is not None for candidate in self.panes)
         for candidate in self.panes:
-            if visible_count <= 1:
+            if self._fullscreen:
                 border = "none"
+                radius = 0
+                candidate.header.hide()
+                candidate.container.layout().setContentsMargins(0, 0, 0, 0)
+                candidate.container.layout().setSpacing(0)
+            elif visible_count <= 1:
+                border = "none"
+                radius = 6
             elif candidate is pane:
                 border = "1px solid #e2e6ed"
+                radius = 6
             else:
                 border = "1px solid #343638"
+                radius = 6
             candidate.container.setStyleSheet(
                 "QWidget#mediaPane {"
-                f"border: {border}; border-radius: 6px; background: #0b0c0d;"
+                f"border: {border}; border-radius: {radius}px; background: #0b0c0d;"
                 "}"
             )
             candidate.surface.setStyleSheet("background: #000; border: 0;")
@@ -1880,6 +1916,85 @@ class PlayerWindow(QMainWindow):
 
     # ---------- window, skins, information ----------
 
+    def eventFilter(self, watched, event) -> bool:
+        if self._fullscreen and event.type() in {
+            QEvent.Type.KeyPress,
+            QEvent.Type.ShortcutOverride,
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.Wheel,
+        }:
+            self._show_fullscreen_controls()
+        return super().eventFilter(watched, event)
+
+    def _poll_fullscreen_activity(self) -> None:
+        if not self._fullscreen:
+            return
+        position = QCursor.pos()
+        if position != self._fullscreen_cursor_position:
+            self._fullscreen_cursor_position = position
+            self._show_fullscreen_controls()
+
+    def _show_fullscreen_controls(self) -> None:
+        if not self._fullscreen:
+            return
+        self.fullscreen_hide_timer.start()
+        if self._fullscreen_controls_visible:
+            return
+        self._fullscreen_controls_visible = True
+        target_height = max(1, self.controls.sizeHint().height())
+        self.controls.setMaximumHeight(0)
+        self.controls.show()
+        self._animate_controls(0, target_height, hide_when_done=False)
+
+    def _hide_fullscreen_controls(self) -> None:
+        if not self._fullscreen or not self._fullscreen_controls_visible:
+            return
+        if self.controls.rect().contains(
+            self.controls.mapFromGlobal(QCursor.pos())
+        ):
+            self.fullscreen_hide_timer.start(750)
+            return
+        self._fullscreen_controls_visible = False
+        self._animate_controls(
+            self.controls.height(), 0, hide_when_done=True
+        )
+
+    def _animate_controls(
+        self, start: int, end: int, hide_when_done: bool
+    ) -> None:
+        if self._controls_animation is not None:
+            self._controls_animation.stop()
+            self._controls_animation.deleteLater()
+        animation = QPropertyAnimation(self.controls, b"maximumHeight", self)
+        self._controls_animation = animation
+        animation.setDuration(180)
+        animation.setStartValue(max(0, start))
+        animation.setEndValue(max(0, end))
+        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        def finish() -> None:
+            if self._controls_animation is not animation:
+                return
+            if hide_when_done and not self._fullscreen_controls_visible:
+                self.controls.hide()
+            else:
+                self.controls.setMaximumHeight(16777215)
+            animation.deleteLater()
+            self._controls_animation = None
+
+        animation.finished.connect(finish)
+        animation.start()
+
+    def _set_fullscreen_pane_chrome(self, hidden: bool) -> None:
+        self.video_grid.setSpacing(0 if hidden else 3)
+        for pane in self.panes:
+            pane.header.setVisible(not hidden)
+            layout = pane.container.layout()
+            margin = 0 if hidden else 3
+            layout.setContentsMargins(margin, margin, margin, margin)
+            layout.setSpacing(0 if hidden else 3)
+        self.set_active_pane(self.active_pane)
+
     def toggle_fullscreen(self) -> None:
         if self._fullscreen:
             self.leave_fullscreen()
@@ -1887,15 +2002,31 @@ class PlayerWindow(QMainWindow):
         self._fullscreen = True
         self._window_was_maximized = self.isMaximized()
         self._sidebar_was_visible = self.sidebar.isVisible()
+        self._fullscreen_controls_visible = False
+        self._fullscreen_cursor_position = QCursor.pos()
+        self._set_fullscreen_pane_chrome(True)
+        self.controls.setMaximumHeight(16777215)
+        self.controls.hide()
         self.sidebar.hide()
         self.menuBar().hide()
         self.statusBar().hide()
         self.showFullScreen()
+        self.fullscreen_activity_timer.start()
 
     def leave_fullscreen(self) -> None:
         if not self._fullscreen:
             return
         self._fullscreen = False
+        self.fullscreen_activity_timer.stop()
+        self.fullscreen_hide_timer.stop()
+        if self._controls_animation is not None:
+            self._controls_animation.stop()
+            self._controls_animation.deleteLater()
+            self._controls_animation = None
+        self._fullscreen_controls_visible = False
+        self.controls.setMaximumHeight(16777215)
+        self.controls.show()
+        self._set_fullscreen_pane_chrome(False)
         self.menuBar().show()
         self.statusBar().show()
         self.sidebar.setVisible(self._sidebar_was_visible)
