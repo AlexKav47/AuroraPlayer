@@ -59,6 +59,7 @@ Available panes are filled first, and additional items remain in the playlist.
 - Plays DVDs, Blu-rays, audio CDs, and VCDs through **File → Open disc**.
 - Supports correctly tagged 360-degree video.
 - Changes playback speed from 0.25× to 4×.
+- Skips backward or forward by a configurable 5, 10, 25, or 50 seconds.
 - Provides frame-by-frame playback and A–B looping.
 - Remembers unfinished local media and resumes from the saved position.
 - Seeks directly when the timeline is clicked and previews exact time on hover.
@@ -184,7 +185,8 @@ and `python3-venv`. Package names vary by distribution.
    the viewing area.
 3. Add more videos by opening or dropping additional files.
 4. Click a pane to select it.
-5. Use the bottom controls for seeking, playback speed, volume, and navigation.
+5. Use the bottom controls for seeking, configurable skipping, playback speed,
+   volume, and navigation.
 6. Open the sidebar to manage the playlist or media library.
 
 Dropping a folder scans it recursively. The first supported item opens in the
@@ -197,7 +199,7 @@ the playlist.
 |---|---|
 | `Space` | Play or pause the active pane |
 | `Ctrl+Space` | Play or pause all panes |
-| `Left` / `Right` | Seek backward or forward 5 seconds |
+| `Left` / `Right` | Skip backward or forward by the selected amount |
 | `Shift+Left` / `Shift+Right` | Seek backward or forward 30 seconds |
 | `Up` / `Down` | Raise or lower volume |
 | `M` | Mute |
@@ -220,6 +222,10 @@ the playlist.
 Change or disable shortcuts under
 **View → Customize keyboard shortcuts**. Choose **Restore defaults** in the
 shortcut editor to return to the original controls.
+
+The backward and forward skip buttons use 10 seconds by default. Select
+**Settings → Playback skip amount** to change both buttons, the `Left` / `Right`
+shortcuts, and horizontal mouse gestures to 5, 10, 25, or 50 seconds.
 
 ## Automatic update checks
 

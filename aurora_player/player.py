@@ -59,7 +59,12 @@ from .dialogs import (
 )
 from . import __version__
 from .library import LibraryStore, expand_media_paths, load_m3u, save_m3u
-from .settings import application_settings
+from .settings import (
+    SKIP_SECONDS_OPTIONS,
+    application_settings,
+    playback_skip_seconds,
+    set_playback_skip_seconds,
+)
 
 if TYPE_CHECKING:
     from .app import AuroraApplication
@@ -81,8 +86,8 @@ SHORTCUT_DEFINITIONS: dict[str, tuple[str, str]] = {
     "set_a": ("Set A loop point", "["),
     "set_b": ("Set B loop point", "]"),
     "clear_ab": ("Clear A–B loop", "\\"),
-    "seek_back_5": ("Seek backward 5 seconds", "Left"),
-    "seek_forward_5": ("Seek forward 5 seconds", "Right"),
+    "seek_back_5": ("Skip backward by the selected amount", "Left"),
+    "seek_forward_5": ("Skip forward by the selected amount", "Right"),
     "seek_back_30": ("Seek backward 30 seconds", "Shift+Left"),
     "seek_forward_30": ("Seek forward 30 seconds", "Shift+Right"),
     "volume_up": ("Volume up", "Up"),
@@ -371,6 +376,7 @@ class PlayerWindow(QMainWindow):
         super().__init__()
         self.application_controller = application
         self.settings = application_settings()
+        self._skip_seconds = playback_skip_seconds(self.settings)
         self.library = application.library
         self.panes: list[MediaPane] = []
         self.shortcut_actions: dict[str, QAction] = {}
@@ -497,7 +503,7 @@ class PlayerWindow(QMainWindow):
             lambda paths, target=pane: self.add_dropped_paths(paths, target)
         )
         pane.surface.toggle_fullscreen.connect(self.toggle_fullscreen)
-        pane.surface.seek_gesture.connect(self.seek_relative)
+        pane.surface.seek_gesture.connect(self._seek_from_gesture)
         pane.surface.volume_gesture.connect(self.adjust_volume)
         pane.surface.activated.connect(lambda selected=pane: self.set_active_pane(selected))
         pane.play_button.clicked.connect(
@@ -552,6 +558,11 @@ class PlayerWindow(QMainWindow):
         self.previous_button = self._tool_button(
             QStyle.StandardPixmap.SP_MediaSkipBackward, self.previous_item, "Previous"
         )
+        self.seek_backward_button = self._tool_button(
+            QStyle.StandardPixmap.SP_MediaSeekBackward,
+            self.skip_backward,
+            "",
+        )
         self.play_button = self._tool_button(
             QStyle.StandardPixmap.SP_MediaPlay, self.toggle_play, "Play / pause"
         )
@@ -561,6 +572,12 @@ class PlayerWindow(QMainWindow):
         self.next_button = self._tool_button(
             QStyle.StandardPixmap.SP_MediaSkipForward, self.next_item, "Next"
         )
+        self.seek_forward_button = self._tool_button(
+            QStyle.StandardPixmap.SP_MediaSeekForward,
+            self.skip_forward,
+            "",
+        )
+        self._refresh_skip_controls()
         self.frame_button = QPushButton("Frame")
         self.frame_button.setToolTip("Advance one frame")
         self.frame_button.clicked.connect(self.next_frame)
@@ -590,8 +607,10 @@ class PlayerWindow(QMainWindow):
             lambda: self.sidebar.setVisible(not self.sidebar.isVisible())
         )
         buttons.addWidget(self.previous_button)
+        buttons.addWidget(self.seek_backward_button)
         buttons.addWidget(self.play_button)
         buttons.addWidget(self.stop_button)
+        buttons.addWidget(self.seek_forward_button)
         buttons.addWidget(self.next_button)
         buttons.addWidget(self.frame_button)
         buttons.addSpacing(12)
@@ -1068,6 +1087,21 @@ class PlayerWindow(QMainWindow):
             view_menu, "Customize keyboard shortcuts…", self.show_shortcut_editor
         )
 
+        settings_menu = self.menuBar().addMenu("&Settings")
+        skip_menu = settings_menu.addMenu("Playback skip amount")
+        self.skip_interval_group = QActionGroup(skip_menu)
+        self.skip_interval_group.setExclusive(True)
+        for seconds in SKIP_SECONDS_OPTIONS:
+            action = self._action(
+                skip_menu,
+                f"{seconds} seconds",
+                lambda checked=False, value=seconds: self.set_skip_seconds(value),
+            )
+            action.setCheckable(True)
+            action.setData(seconds)
+            action.setChecked(seconds == self._skip_seconds)
+            self.skip_interval_group.addAction(action)
+
         help_menu = self.menuBar().addMenu("&Help")
         self._action(help_menu, "Keyboard and mouse controls", self.show_controls)
         self._action(
@@ -1089,8 +1123,8 @@ class PlayerWindow(QMainWindow):
 
     def _bind_shortcuts(self) -> None:
         shortcuts = {
-            "seek_back_5": lambda: self.seek_relative(-5000),
-            "seek_forward_5": lambda: self.seek_relative(5000),
+            "seek_back_5": self.skip_backward,
+            "seek_forward_5": self.skip_forward,
             "seek_back_30": lambda: self.seek_relative(-30000),
             "seek_forward_30": lambda: self.seek_relative(30000),
             "volume_up": lambda: self.adjust_volume(5),
@@ -1617,6 +1651,36 @@ class PlayerWindow(QMainWindow):
         if current >= 0:
             self.player.set_time(max(0, current + milliseconds))
 
+    def skip_backward(self) -> None:
+        self.seek_relative(-self._skip_seconds * 1000)
+
+    def skip_forward(self) -> None:
+        self.seek_relative(self._skip_seconds * 1000)
+
+    def _seek_from_gesture(self, milliseconds: int) -> None:
+        if milliseconds:
+            direction = 1 if milliseconds > 0 else -1
+            self.seek_relative(self._skip_seconds * 1000 * direction)
+
+    def set_skip_seconds(self, seconds: int) -> None:
+        self._skip_seconds = set_playback_skip_seconds(self.settings, seconds)
+        self._refresh_skip_controls()
+        self.statusBar().showMessage(
+            f"Playback skip amount set to {self._skip_seconds} seconds.",
+            3000,
+        )
+
+    def _refresh_skip_controls(self) -> None:
+        seconds = self._skip_seconds
+        self.seek_backward_button.setText(f"{seconds}s")
+        self.seek_backward_button.setToolTip(
+            f"Skip backward {seconds} seconds"
+        )
+        self.seek_forward_button.setText(f"{seconds}s")
+        self.seek_forward_button.setToolTip(
+            f"Skip forward {seconds} seconds"
+        )
+
     def adjust_volume(self, amount: int) -> None:
         self.volume_slider.setValue(self.volume_slider.value() + amount)
 
@@ -1878,7 +1942,8 @@ class PlayerWindow(QMainWindow):
             "Controls",
             f"{self._shortcut_text('play_pause')} — Play/pause\n"
             f"{self._shortcut_text('seek_back_5')} / "
-            f"{self._shortcut_text('seek_forward_5')} — Seek 5 seconds\n"
+            f"{self._shortcut_text('seek_forward_5')} — "
+            f"Skip {self._skip_seconds} seconds\n"
             f"{self._shortcut_text('seek_back_30')} / "
             f"{self._shortcut_text('seek_forward_30')} — Seek 30 seconds\n"
             f"{self._shortcut_text('volume_up')} / "
@@ -1901,6 +1966,7 @@ class PlayerWindow(QMainWindow):
             "Hover timeline — Preview the exact time\n"
             "Click or hover volume — Set or preview the level\n"
             "Drop files or folders on a pane — Open them there\n\n"
+            "Change the skip amount under Settings → Playback skip amount.\n"
             "Change shortcuts under View → Customize keyboard shortcuts.",
         )
 
